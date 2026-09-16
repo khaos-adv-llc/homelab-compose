@@ -109,7 +109,7 @@ render_one() {
             --projectId="$INFISICAL_PROJECT_ID" \
             --env="$INFISICAL_ENV" \
             --path="/$stack" \
-            --format=dotenv-export \
+            --format=dotenv \
             --token="$INFISICAL_TOKEN" > "$tmp_file" 2>/tmp/render-env.err; then
         echo "WARN: failed to render $stack (see /tmp/render-env.err) -- leaving existing .env untouched" >&2
         rm -f "$tmp_file"
