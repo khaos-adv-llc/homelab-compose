@@ -13,17 +13,24 @@
 # installed on the host, and a machine identity (Universal Auth) scoped
 # read-only to secrets.
 #
-# Config: this script reads INFISICAL_CLIENT_ID from the environment and the
-# client secret from a file (never inline, never in git) -- see
-# /docker/.infisical/client-secret.txt below. Adjust paths/IDs for your real
-# Infisical deployment once it exists.
+# Usage:
+#   ./render-env.sh                # render every stack in STACKS
+#   ./render-env.sh SearXNG AirTrail   # render only the named stack(s) --
+#                                       # use this for the Phase 2 pilot so
+#                                       # you don't touch every stack's live
+#                                       # /docker/<stack>/.env at once.
+#
+# REPO_ROOT can be overridden via env var for smoke-testing against a
+# scratch directory instead of the real /docker tree, e.g.:
+#   sudo REPO_ROOT=/tmp/render-env-test ./render-env.sh
 
 set -euo pipefail
 
-REPO_ROOT="/docker"                       # where Arcane's PROJECTS_DIRECTORY points
-INFISICAL_PROJECT_ID="REPLACE_ME"         # the "Homelab" project's ID in Infisical
+REPO_ROOT="${REPO_ROOT:-/docker}"         # where Arcane's PROJECTS_DIRECTORY points
+INFISICAL_DOMAIN="https://infisical.internal.valdeze.ch/api"  # self-hosted, not cloud SaaS
+INFISICAL_PROJECT_ID="f067eba8-f3b1-4cd5-89c8-6425e81ca3b6"    # "Homelab" Secrets Management project
 INFISICAL_ENV="prod"                      # single environment is enough for a homelab
-INFISICAL_CLIENT_ID="REPLACE_ME"          # machine identity Universal Auth client ID
+INFISICAL_CLIENT_ID="cf4fd700-c720-4d2b-865b-e60f84f10122"    # render-env-host machine identity
 INFISICAL_CLIENT_SECRET_FILE="/docker/.infisical/client-secret.txt"  # mode 600, root-owned, never in git
 
 # Folder name in this repo == folder name under $REPO_ROOT == Infisical
@@ -35,9 +42,7 @@ INFISICAL_CLIENT_SECRET_FILE="/docker/.infisical/client-secret.txt"  # mode 600,
 # credentials, but this still renders anything else its compose references)
 # and low/no-secret stacks like AdGuardHome/FileBrowser/searxng/
 # MinecraftServer -- render just writes an empty/near-empty .env for those,
-# which is harmless. `Authentik` (core) was missing from this list in the
-# original draft even though it has real secrets (cookie secret, DB
-# password, etc.) -- added here.
+# which is harmless.
 STACKS=(
     AdGuardHome
     AirTrail
@@ -59,6 +64,24 @@ STACKS=(
     YTzero
 )
 
+# Optional positional args restrict which stacks get rendered -- validated
+# against the known list so a typo fails loudly instead of silently no-op'ing.
+if [[ $# -gt 0 ]]; then
+    TARGET_STACKS=("$@")
+    for s in "${TARGET_STACKS[@]}"; do
+        found=0
+        for known in "${STACKS[@]}"; do
+            [[ "$s" == "$known" ]] && found=1 && break
+        done
+        if [[ "$found" -eq 0 ]]; then
+            echo "ERROR: unknown stack '$s' -- must be one of: ${STACKS[*]}" >&2
+            exit 1
+        fi
+    done
+else
+    TARGET_STACKS=("${STACKS[@]}")
+fi
+
 if [[ ! -f "$INFISICAL_CLIENT_SECRET_FILE" ]]; then
     echo "ERROR: $INFISICAL_CLIENT_SECRET_FILE not found. Bootstrap the machine identity first." >&2
     exit 1
@@ -67,6 +90,7 @@ fi
 CLIENT_SECRET="$(cat "$INFISICAL_CLIENT_SECRET_FILE")"
 
 INFISICAL_TOKEN="$(infisical login \
+    --domain="$INFISICAL_DOMAIN" \
     --method=universal-auth \
     --client-id="$INFISICAL_CLIENT_ID" \
     --client-secret="$CLIENT_SECRET" \
@@ -81,6 +105,7 @@ render_one() {
     tmp_file="$(mktemp)"
 
     if ! infisical export \
+            --domain="$INFISICAL_DOMAIN" \
             --projectId="$INFISICAL_PROJECT_ID" \
             --env="$INFISICAL_ENV" \
             --path="/$stack" \
@@ -99,7 +124,7 @@ render_one() {
 }
 
 status=0
-for stack in "${STACKS[@]}"; do
+for stack in "${TARGET_STACKS[@]}"; do
     render_one "$stack" || status=1
 done
 
