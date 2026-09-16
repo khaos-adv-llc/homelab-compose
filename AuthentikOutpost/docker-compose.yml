@@ -1,0 +1,21 @@
+services:
+    authentik-ldap-outpost:
+        image: ghcr.io/goauthentik/ldap:2026.8.2
+        container_name: authentik-ldap-outpost
+        restart: unless-stopped
+        environment:
+            AUTHENTIK_HOST: https://auth.valdeze.ch
+            AUTHENTIK_TOKEN: ${AUTHENTIK_TOKEN}
+            AUTHENTIK_INSECURE: "false"
+        networks:
+            MediaServer:
+                aliases:
+                    - authentik-ldap-outpost
+            shared-services:
+                aliases:
+                    - authentik-ldap-outpost
+networks:
+    shared-services:
+        external: true
+    MediaServer:
+        external: true

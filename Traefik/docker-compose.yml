@@ -1,0 +1,92 @@
+services:
+    socket-proxy:
+        image: lscr.io/linuxserver/socket-proxy:latest
+        restart: unless-stopped
+        environment:
+            CONTAINERS: "1"
+            SERVICES: "1"
+            TASKS: "1"
+            NETWORKS: "1"
+            EVENTS: "1"
+            INFO: "1"
+            VERSION: "1"
+            PING: "1"
+            AUTH: "0"
+            BUILD: "0"
+            COMMIT: "0"
+            CONFIGS: "0"
+            DISTRIBUTION: "0"
+            EXEC: "0"
+            IMAGES: "0"
+            NODES: "0"
+            PLUGINS: "0"
+            POST: "0"
+            SECRETS: "0"
+            SESSION: "0"
+            SWARM: "0"
+            SYSTEM: "0"
+            VOLUMES: "0"
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+        networks:
+            - proxy_net
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /run
+            - /tmp
+    traefik:
+        image: traefik:v3.6
+        restart: unless-stopped
+        depends_on:
+            - socket-proxy
+        command:
+            - "--configFile=/etc/traefik/traefik.yml"
+        environment:
+            CF_DNS_API_TOKEN_FILE: /run/secrets/cloudflare_dns_api_token
+        ports:
+            - "80:80"
+            - "443:443"
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        volumes:
+            - ./config/traefik.yml:/etc/traefik/traefik.yml:ro
+            - ./dynamic:/etc/traefik/dynamic:ro
+            - ./letsencrypt:/letsencrypt
+            - ./secrets/cloudflare_dns_api_token:/run/secrets/cloudflare_dns_api_token:ro
+        networks:
+            - proxy_net
+            - MediaServer
+            - shared-services
+            - reactive_resume_network
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /tmp
+    authentik-outpost:
+        image: ghcr.io/goauthentik/proxy:2026.8.2
+        restart: unless-stopped
+        environment:
+            AUTHENTIK_HOST: "https://auth.valdeze.ch"
+            AUTHENTIK_HOST_BROWSER: "https://auth.valdeze.ch"
+            AUTHENTIK_TOKEN: "${AUTHENTIK_OUTPOST_TOKEN}"
+            AUTHENTIK_LOG_LEVEL: "info"
+        networks:
+            - proxy_net
+        security_opt:
+            - no-new-privileges:true
+networks:
+    proxy_net:
+        external: true
+        name: proxy_net
+    MediaServer:
+        external: true
+        name: MediaServer
+    shared-services:
+        external: true
+        name: shared-services
+    reactive_resume_network:
+        external: true
+        name: reactive_resume_network

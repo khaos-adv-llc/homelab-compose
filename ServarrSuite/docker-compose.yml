@@ -1,0 +1,1082 @@
+# =============================================================================
+# valdeze.ch media stack
+# =============================================================================
+# Services are grouped by role rather than alphabetically:
+#
+#      1. Networking / VPN                - gluetun tunnels + health watchdog
+#      2. Download clients                - torrent / usenet clients that sit behind VPN
+#            (or, once moved off VPN, plain network) containers
+#      3. Indexers & search              - Prowlarr + Cloudflare bypass helper
+#      4. *Arr media management      - Sonarr/Radarr/Bazarr/Lidarr + quality-profile
+#                                                                  syncing tools
+#      5. Discovery & requests        - Overseerr / Suggestarr / Musicseerr
+#      6. Playback                                - Jellyfin (+ alt web client), Navidrome, Picard,
+#                                                                  Jellystat (Jellyfin watch/user statistics)
+#      7. Live TV                                  - Dispatcharr
+#      8. Storage / file access      - rclone web GUI, Filestash
+#      9. Dashboard                              - Homepage
+#    10. Backups                                  - Duplicati (backs up every *arr/Jellyfin/etc.
+#                                                                  config volume to a remote target)
+#
+# Disabled (commented-out) services are left in place under the group they
+# belong to, so they can be re-enabled later without hunting for where they
+# used to live. Every service has a short comment block above it explaining
+# what it does and any option worth knowing about.
+#
+# Every Traefik Host() rule uses INTERNAL_DOMAIN (set in .env, e.g.
+# "internal.valdeze.ch"), so the whole stack's internal domain can be
+# changed in one place. Falls back to internal.valdeze.ch if unset.
+#
+# Networking model:
+#      - "MediaServer" is the internal network almost everything lives on.
+#          Traefik (defined in another compose file) also attaches to it to reach
+#          services by container name.
+#      - "shared-services" is a second network Traefik itself sits on; Jellyfin
+#          is deliberately attached to BOTH so its Traefik labels (which pin
+#          `traefik.docker.network=shared-services`) can actually resolve it.
+#      - qbittorrent (disabled) uses `network_mode: service:gluetun`, meaning it
+#          has NO network of its own - it shares gluetun's network namespace, so
+#          all its traffic (and only its traffic, currently) goes through the VPN.
+#      - slskd (disabled) uses the same trick against gluetun-proton, so Soulseek
+#          traffic goes out over ProtonVPN specifically instead of the custom WG
+#          provider gluetun uses.
+# =============================================================================
+
+networks:
+    MediaServer:
+        external: true
+    shared-services:
+        external: true
+
+# Common PUID/PGID/TZ/UMASK block reused by most LinuxServer.io (lscr.io)
+# images via YAML anchor, so it isn't retyped on every service.
+x-env-common: &env_common
+    PUID: ${PUID}
+    PGID: ${PGID}
+    TZ: ${TZ}
+    UMASK: ${UMASK}
+
+services:
+
+    # ===========================================================================
+    # 1. NETWORKING / VPN
+    # ===========================================================================
+
+    # --- gluetun ---------------------------------------------------------------
+    # Primary VPN gateway container (custom WireGuard provider). Other services
+    # either attach to the MediaServer network directly (unaffected by the VPN)
+    # or use `network_mode: service:gluetun` to force their traffic through the
+    # tunnel (currently only qbittorrent, disabled below).
+    #
+    # Key options:
+    #      VPN_SERVICE_PROVIDER / VPN_TYPE    - "custom" + "wireguard" here, meaning
+    #                                                                            gluetun is pointed at your own WG
+    #                                                                            endpoint/keys rather than a supported
+    #                                                                            commercial provider profile.
+    #      FIREWALL_VPN_INPUT_PORTS                  - ports allowed IN through the tunnel
+    #                                                                            (torrenting port).
+    #      FIREWALL_INPUT_PORTS                          - ports allowed in on the container's
+    #                                                                            normal (non-VPN) interface - needed
+    #                                                                            because qbittorrent's WebUI (8082)
+    #                                                                            is reached via gluetun's own network.
+    #      FIREWALL_OUTBOUND_SUBNETS                - LAN subnets allowed to reach the
+    #                                                                            container despite the VPN's default
+    #                                                                            "block everything but the tunnel"
+    #                                                                            firewall.
+    #      VPN_PORT_FORWARDING                            - whether gluetun asks the VPN provider
+    #                                                                            for a forwarded port (only meaningful
+    #                                                                            for providers that support it).
+    #      HTTPPROXY                                                - exposes gluetun's built-in HTTP proxy
+    #                                                                            so other containers can proxy through
+    #                                                                            it without joining its network.
+    #
+    # Note: qbittorrent's WebUI port (8082) is published here rather than on
+    # qbittorrent itself, because qbittorrent has no ports of its own under
+    # `network_mode: service:gluetun`. Same reasoning applies to its Traefik
+    # router/labels, kept commented alongside gluetun's own labels below.
+    gluetun:
+        image: qmcgaw/gluetun:latest
+        container_name: gluetun
+        cap_add:
+            - NET_ADMIN
+        devices:
+            - /dev/net/tun:/dev/net/tun
+        networks:
+            - MediaServer
+        environment:
+            PUID: ${PUID}
+            PGID: ${PGID}
+            TZ: ${TZ}
+            VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER}
+            VPN_TYPE: ${VPN_TYPE}
+            WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+            WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES}
+            WIREGUARD_ENDPOINT_IP: ${WIREGUARD_ENDPOINT_IP}
+            WIREGUARD_ENDPOINT_PORT: ${WIREGUARD_ENDPOINT_PORT}
+            WIREGUARD_PUBLIC_KEY: ${WIREGUARD_PUBLIC_KEY}
+            DNS_ADDRESS: ${DNS_ADDRESS}
+            FIREWALL_VPN_INPUT_PORTS: ${FIREWALL_VPN_INPUT_PORTS}
+            FIREWALL_INPUT_PORTS: ${FIREWALL_INPUT_PORTS}
+            FIREWALL_OUTBOUND_SUBNETS: ${FIREWALL_OUTBOUND_SUBNETS}
+            VPN_PORT_FORWARDING: ${VPN_PORT_FORWARDING}
+            VPN_PORT_FORWARDING_PROVIDER: ${VPN_PORT_FORWARDING_PROVIDER}
+            HTTPPROXY: ${HTTPPROXY}
+            HEALTH_VPN_DURATION_INITIAL: ${HEALTH_VPN_DURATION_INITIAL}
+        volumes:
+            - ./gluetun:/gluetun
+        # Only the VPN torrenting port and qbittorrent's WebUI port live here.
+        # sabnzbd (8080) and nzbget (6789) were moved OFF gluetun onto MediaServer
+        # directly - see the Download Clients section - so they no longer need a
+        # host port punched through the VPN container.
+        ports:
+            - "${FIREWALL_VPN_INPUT_PORTS}:${FIREWALL_VPN_INPUT_PORTS}"
+            - "8082:8082"
+        # qbittorrent has no network interface of its own (network_mode:
+        # service:gluetun), so Traefik can only reach its WebUI through gluetun's
+        # own container/network - hence its router/service labels live here
+        # instead of on the qbittorrent service block itself.
+#        labels:
+#            - "traefik.enable=true"
+#            - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.qbittorrent.entrypoints=websecure"
+#            - "traefik.http.routers.qbittorrent.tls=true"
+#            - "traefik.http.routers.qbittorrent.tls.certresolver=cloudflare"
+#            - "traefik.http.services.qbittorrent.loadbalancer.server.port=8082"
+        healthcheck:
+            test: ["CMD-SHELL", "wget -q --spider https://cloudflare.com || exit 1"]
+            interval: 20s
+            timeout: 10s
+            retries: 5
+        restart: unless-stopped
+
+    # --- gluetun-proton ----------------------------------------------------------
+    # A second, independent VPN gateway using ProtonVPN specifically. Kept
+    # separate from the main `gluetun` service so certain traffic (currently
+    # slskd/Soulseek, disabled below) can be routed via Proton instead of the
+    # custom WireGuard provider the primary gluetun uses - useful if only one
+    # provider supports port forwarding, or you just want to isolate P2P types.
+    #
+    # Key options:
+    #      SERVER_COUNTRIES          - restricts which Proton exit countries gluetun
+    #                                                    may connect to.
+    #      VPN_PORT_FORWARDING    - "on" here (vs. "off" on the main gluetun),
+    #                                                    since Proton supports NAT-PMP port forwarding.
+    #      WIREGUARD_MTU                - lowered to 1360 to avoid fragmentation issues
+    #                                                    some Proton WireGuard endpoints have.
+    gluetun-proton:
+        image: qmcgaw/gluetun:latest
+        container_name: gluetun-proton
+        cap_add:
+            - NET_ADMIN
+        devices:
+            - /dev/net/tun:/dev/net/tun
+        networks:
+            - MediaServer
+        environment:
+            PUID: ${PUID}
+            PGID: ${PGID}
+            TZ: ${TZ}
+            VPN_SERVICE_PROVIDER: protonvpn
+            VPN_TYPE: wireguard
+            WIREGUARD_PRIVATE_KEY: ${PROTON_WG_PRIVATE_KEY}
+            WIREGUARD_ADDRESSES: ${PROTON_WG_ADDRESSES}
+            SERVER_COUNTRIES: ${PROTON_SERVER_COUNTRIES}
+            VPN_PORT_FORWARDING: "on"
+            FIREWALL_INPUT_PORTS: "5030,5031"
+            WIREGUARD_MTU: 1360
+        volumes:
+            - ./gluetun-proton:/gluetun
+        ports:
+            - "5030:5030"
+            - "5031:5031"
+        restart: unless-stopped
+
+    # --- deunhealth --------------------------------------------------------------
+    # Watches Docker for containers stuck in an "unhealthy" state and restarts
+    # them automatically - used here for containers that share gluetun's
+    # network namespace (e.g. qbittorrent), whose own healthchecks can go stale
+    # if the VPN blips. Talks to the Docker socket directly, no network needed.
+    deunhealth:
+        image: qmcgaw/deunhealth
+        container_name: deunhealth
+        network_mode: none
+        environment:
+            LOG_LEVEL: info
+            HEALTH_SERVER_ADDRESS: 127.0.0.1:9999
+            TZ: ${TZ}
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+        restart: always
+
+    # ===========================================================================
+    # 2. DOWNLOAD CLIENTS
+    # ===========================================================================
+
+    # --- qbittorrent (disabled) ---------------------------------------------------
+    # Torrent client. Stays behind gluetun exactly as before via
+    # `network_mode: service:gluetun`, so its WebUI (8082) stays published on
+    # gluetun itself and radarr/sonarr/etc. keep reaching it the same way.
+    # Traefik routing for it is declared on the gluetun service above, not here.
+#    qbittorrent:
+#        image: lscr.io/linuxserver/qbittorrent:latest
+#        container_name: qbittorrent
+#        network_mode: service:gluetun
+#        depends_on:
+#            gluetun:
+#                condition: service_healthy
+#        labels:
+#            - deunhealth.restart.on.unhealthy=true
+#        environment:
+#            <<: *env_common
+#            WEBUI_PORT: "8082"
+#            TORRENTING_PORT: ${FIREWALL_VPN_INPUT_PORTS}
+#        volumes:
+#            - ./qbittorrent:/config
+#            - /home/tuckeraa/media:/data/media
+#            - ./cache/qbittorrent-incomplete:/downloads-incomplete
+#        healthcheck:
+#            test: ["CMD-SHELL", "wget -q --spider https://cloudflare.com || exit 1"]
+#            interval: 60s
+#            retries: 3
+#            start_period: 20s
+#            timeout: 10s
+#        restart: unless-stopped
+
+    # --- sabnzbd (disabled) --------------------------------------------------------
+    # Usenet client. Moved OFF gluetun onto the MediaServer network directly
+    # (usenet doesn't need VPN routing the way torrenting does), routed via
+    # Traefik, no host ports published.
+#    sabnzbd:
+#        image: lscr.io/linuxserver/sabnzbd:latest
+#        container_name: sabnzbd
+#        networks:
+#            - MediaServer
+#        environment:
+#            <<: *env_common
+#        volumes:
+#            - ./sabnzbd/config:/config
+#            - /home/tuckeraa/media:/data/media
+#            - ./cache/sabnzbd-incomplete:/incomplete-downloads
+#        labels:
+#            - "traefik.enable=true"
+#            - "traefik.http.routers.sabnzbd.rule=Host(`sabnzbd.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.sabnzbd.entrypoints=websecure"
+#            - "traefik.http.routers.sabnzbd.tls=true"
+#            - "traefik.http.routers.sabnzbd.tls.certresolver=cloudflare"
+#            - "traefik.http.services.sabnzbd.loadbalancer.server.port=8080"
+#        healthcheck:
+#            test: ["CMD-SHELL", "wget -q --spider https://cloudflare.com || exit 1"]
+#            interval: 60s
+#            retries: 3
+#            start_period: 20s
+#            timeout: 10s
+#        restart: unless-stopped
+
+    # --- nzbget ------------------------------------------------------------------
+    # Primary usenet client. Also moved off gluetun onto MediaServer directly,
+    # routed via Traefik, no host ports published.
+    nzbget:
+        image: lscr.io/linuxserver/nzbget:latest
+        container_name: nzbget
+        networks:
+            - MediaServer
+        environment:
+            <<: *env_common
+        volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - ./nzbget:/config
+            - /home/tuckeraa/media:/data/media
+            - ./cache/nzbget-incomplete:/incomplete-downloads
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.nzbget.rule=Host(`nzbget.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.nzbget.entrypoints=websecure"
+            - "traefik.http.routers.nzbget.tls=true"
+            - "traefik.http.routers.nzbget.tls.certresolver=cloudflare"
+            - "traefik.http.services.nzbget.loadbalancer.server.port=6789"
+        healthcheck:
+            test: ["CMD-SHELL", "wget -q --spider https://cloudflare.com || exit 1"]
+            interval: 60s
+            retries: 3
+            start_period: 20s
+            timeout: 10s
+        restart: unless-stopped
+
+    # --- nzbget2 -------------------------------------------------------------
+    # A second, independent nzbget instance (own config/incomplete-downloads
+    # dirs and its own Traefik hostname) - handy for a separate usenet
+    # account/server-pair, or as a dedicated backup/overflow downloader.
+    nzbget2:
+        image: lscr.io/linuxserver/nzbget:latest
+        container_name: nzbget2
+        networks:
+            - MediaServer
+        environment:
+            <<: *env_common
+        volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - ./nzbget2:/config
+            - /home/tuckeraa/media:/data/media
+            - ./cache/nzbget2-incomplete:/incomplete-downloads
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.nzbget2.rule=Host(`nzbget2.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.nzbget2.entrypoints=websecure"
+            - "traefik.http.routers.nzbget2.tls=true"
+            - "traefik.http.routers.nzbget2.tls.certresolver=cloudflare"
+            - "traefik.http.services.nzbget2.loadbalancer.server.port=6789"
+        healthcheck:
+            test: ["CMD-SHELL", "wget -q --spider https://cloudflare.com || exit 1"]
+            interval: 60s
+            retries: 3
+            start_period: 20s
+            timeout: 10s
+        restart: unless-stopped
+
+    # --- slskd ----------------------------------------------------
+    # Soulseek client/daemon. Uses `network_mode: service:gluetun-proton` so
+    # its P2P traffic is routed specifically through the Proton tunnel.
+    slskd:
+        image: slskd/slskd:latest
+        container_name: slskd
+        network_mode: service:gluetun-proton
+        depends_on:
+            - gluetun-proton
+        environment:
+            <<: *env_common
+            SLSKD_REMOTE_CONFIGURATION: "true"
+        volumes:
+            - ./slskd:/app
+            - /home/tuckeraa/media:/data/media
+        restart: unless-stopped
+
+    # --- soularr ---------------------------------------------------
+    # Bridges Lidarr wanted/missing albums to slskd searches, automating
+    # Soulseek-based music downloads. Depends on slskd being enabled.
+    soularr:
+        image: mrusse08/soularr:latest
+        container_name: soularr
+        user: ${PUID}:${PGID}
+        environment:
+            <<: *env_common
+            SCRIPT_INTERVAL: 300
+        volumes:
+            - ./soularr:/data
+            - /home/tuckeraa/media:/data/media
+        networks:
+            - MediaServer
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.soularr.rule=Host(`soularr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.soularr.entrypoints=websecure"
+            - "traefik.http.routers.soularr.tls=true"
+            - "traefik.http.routers.soularr.tls.certresolver=cloudflare"
+            - "traefik.http.services.soularr.loadbalancer.server.port=8265"
+        restart: unless-stopped
+
+    # ===========================================================================
+    # 3. INDEXERS & SEARCH
+    # ===========================================================================
+
+    # --- prowlarr --------------------------------------------------------------
+    # Central indexer manager - holds torrent/usenet tracker credentials once
+    # and pushes them out to Sonarr/Radarr/Lidarr, so trackers aren't
+    # configured separately in each *arr app.
+    prowlarr:
+        image: lscr.io/linuxserver/prowlarr:latest
+        container_name: prowlarr
+        environment:
+            <<: *env_common
+        volumes:
+            - ./prowlarr:/config
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.prowlarr.entrypoints=websecure"
+            - "traefik.http.routers.prowlarr.tls=true"
+            - "traefik.http.routers.prowlarr.tls.certresolver=cloudflare"
+            - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- flaresolverr ------------------------------------------------------------
+    # Headless-browser proxy that solves Cloudflare/DDoS-Guard challenges on
+    # behalf of Prowlarr, for indexers that sit behind such protection.
+    #
+    # Key options:
+    #      HEADLESS                  - runs the underlying browser without a visible UI
+    #                                            (always "true" in a server context).
+    #      BROWSER_TIMEOUT      - max ms allowed to solve a challenge before failing.
+    #      shm_size                    - Chromium needs more /dev/shm than Docker's tiny
+    #                                            64 MB default, hence bumped to 256 MB.
+    flaresolverr:
+        image: ghcr.io/flaresolverr/flaresolverr:latest
+        container_name: flaresolverr
+        environment:
+            TZ: ${TZ}
+            LOG_LEVEL: info
+            HEADLESS: "true"
+            BROWSER_TIMEOUT: "120000"
+        ports:
+            - "8191:8191"
+        networks:
+            - MediaServer
+        shm_size: 256m
+        restart: unless-stopped
+
+    # ===========================================================================
+    # 4. *ARR MEDIA MANAGEMENT
+    # ===========================================================================
+
+    # --- sonarr ------------------------------------------------------------------
+    # TV show tracking/automation: monitors series, grabs releases from
+    # indexers (via Prowlarr) through a download client, and renames/sorts
+    # files into the media library.
+    sonarr:
+        image: lscr.io/linuxserver/sonarr:latest
+        container_name: sonarr
+        environment:
+            <<: *env_common
+        volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - ./sonarr:/config
+            - /home/tuckeraa/media:/data/media
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.sonarr.rule=Host(`sonarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.sonarr.entrypoints=websecure"
+            - "traefik.http.routers.sonarr.tls=true"
+            - "traefik.http.routers.sonarr.tls.certresolver=cloudflare"
+            - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- radarr ------------------------------------------------------------------
+    # Same idea as Sonarr, but for movies.
+    radarr:
+        image: lscr.io/linuxserver/radarr:latest
+        container_name: radarr
+        environment:
+            <<: *env_common
+        volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - ./radarr:/config
+            - /home/tuckeraa/media:/data/media
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.radarr.rule=Host(`radarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.radarr.entrypoints=websecure"
+            - "traefik.http.routers.radarr.tls=true"
+            - "traefik.http.routers.radarr.tls.certresolver=cloudflare"
+            - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- lidarr ---------------------------------------------------
+    # Same idea as Sonarr/Radarr, but for music albums.
+    lidarr:
+        image: lscr.io/linuxserver/lidarr:latest
+        container_name: lidarr
+        environment:
+            <<: *env_common
+        volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - ./lidarr:/config
+            - /home/tuckeraa/media:/data/media
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.lidarr.rule=Host(`lidarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.lidarr.entrypoints=websecure"
+            - "traefik.http.routers.lidarr.tls=true"
+            - "traefik.http.routers.lidarr.tls.certresolver=cloudflare"
+            - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- bazarr ------------------------------------------------------------------
+    # Subtitle manager - watches Sonarr/Radarr's libraries and automatically
+    # downloads matching subtitles from subtitle indexers.
+    bazarr:
+        image: lscr.io/linuxserver/bazarr:latest
+        container_name: bazarr
+        environment:
+            <<: *env_common
+        volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - ./bazarr:/config
+            - /home/tuckeraa/media:/data/media
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.bazarr.rule=Host(`bazarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.bazarr.entrypoints=websecure"
+            - "traefik.http.routers.bazarr.tls=true"
+            - "traefik.http.routers.bazarr.tls.certresolver=cloudflare"
+            - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- profilarr-v2 --------------------------------------------------------
+    # Current profilarr, rebranded/rehosted under dictionarry-hub. Sits behind
+    # OIDC auth (via your auth.valdeze.ch identity provider) instead of its own
+    # login, and no longer needs a directly published port since auth + TLS are
+    # both handled externally.
+    #
+    # Key options:
+    #      AUTH                                  - "oidc" delegates login entirely to the IdP below
+    #                                                    instead of profilarr's built-in accounts.
+    #      OIDC_DISCOVERY_URL      - the IdP's `.well-known/openid-configuration`
+    #                                                    endpoint.
+    #      OIDC_CLIENT_ID/SECRET - credentials for the OIDC application registered
+    #                                                    with the IdP.
+    profilarr-v2:
+        image: ghcr.io/dictionarry-hub/profilarr:latest
+        container_name: profilarr-v2
+        restart: unless-stopped
+        volumes:
+            - ./profilarr-v2:/config
+        environment:
+            ORIGIN: "https://profilarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}"
+            AUTH: oidc
+            OIDC_DISCOVERY_URL: ${PROFILARR_V2_OIDC_URL}
+            OIDC_CLIENT_ID: ${PROFILARR_V2_OIDC_ID}
+            OIDC_CLIENT_SECRET: ${PROFILARR_V2_OIDC_SECRET}
+        networks:
+            - MediaServer
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.profilarr-v2.rule=Host(`profilarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.profilarr-v2.entrypoints=websecure"
+            - "traefik.http.routers.profilarr-v2.tls=true"
+            - "traefik.http.routers.profilarr-v2.tls.certresolver=cloudflare"
+            - "traefik.http.services.profilarr-v2.loadbalancer.server.port=6868"
+
+    # --- cleanuparr (disabled) ------------------------------------------------
+    # Housekeeping tool that removes stalled/blocked downloads and orphaned
+    # queue items across the *arr apps and download clients automatically.
+#    cleanuparr:
+#        image: ghcr.io/cleanuparr/cleanuparr:latest
+#        container_name: cleanuparr
+#        environment:
+#            PORT: "11011"
+#            TZ: ${TZ}
+#            PUID: ${PUID}
+#            PGID: ${PGID}
+#        volumes:
+#            - ./cleanuparr:/config
+#        labels:
+#            - "traefik.enable=true"
+#            - "traefik.http.routers.cleanuparr.rule=Host(`cleanuparr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.cleanuparr.entrypoints=websecure"
+#            - "traefik.http.routers.cleanuparr.tls=true"
+#            - "traefik.http.routers.cleanuparr.tls.certresolver=cloudflare"
+#            - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
+#        networks:
+#            - MediaServer
+#        restart: unless-stopped
+
+    # ===========================================================================
+    # 5. DISCOVERY & REQUESTS
+    # ===========================================================================
+
+    # --- suggestarr --------------------------------------------------------------
+    # Recommends new movies/shows (based on what's already in the library or
+    # being watched) and can auto-submit them as requests - a discovery layer
+    # on top of Sonarr/Radarr/Overseerr.
+    suggestarr:
+        image: ciuse99/suggestarr:latest
+        container_name: SuggestArr
+        restart: unless-stopped
+        ports:
+            - "${SUGGESTARR_PORT:-5000}:${SUGGESTARR_PORT:-5000}"
+        volumes:
+            - ./Suggestarr/config_files:/app/config/config_files
+        environment:
+            <<: *env_common
+            # Optional: only needed if something goes wrong and you need to inspect deeper
+            LOG_LEVEL: ${LOG_LEVEL:-info}
+            # Optional: customize the port (defaults to 5000 if not set)
+            SUGGESTARR_PORT: ${SUGGESTARR_PORT:-5000}
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.suggestarr.entrypoints=websecure"
+            - "traefik.http.routers.suggestarr.tls=true"
+            - "traefik.http.routers.suggestarr.tls.certresolver=cloudflare"
+            - "traefik.http.services.suggestarr.loadbalancer.server.port=5000"
+        networks:
+            - MediaServer
+
+    # --- overseerr -----------------------------------------------------------
+    # User-facing request portal: household/friends browse and request
+    # movies/shows here, and Overseerr forwards approved requests to
+    # Sonarr/Radarr automatically. (Image is the community "seerr-team" fork.)
+    overseerr:
+        image: ghcr.io/seerr-team/seerr:latest
+        container_name: overseerr
+        environment:
+            <<: *env_common
+        volumes:
+            - ./overseerr:/app/config
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.overseerr.rule=Host(`request.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.overseerr.entrypoints=websecure"
+            - "traefik.http.routers.overseerr.tls=true"
+            - "traefik.http.routers.overseerr.tls.certresolver=cloudflare"
+            - "traefik.http.services.overseerr.loadbalancer.server.port=5055"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- musicseerr ------------------------------------------------
+    # Overseerr-equivalent request portal for music, forwarding approved
+    # requests to Lidarr. Mounts the media library read-only since it only
+    # needs to check what's already present.
+    musicseerr:
+        image: ghcr.io/habirabbu/musicseerr:latest
+        container_name: musicseerr
+        environment:
+            <<: *env_common
+            PORT: "8688"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.musicseerr.rule=Host(`musicrequest.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.musicseerr.entrypoints=websecure"
+            - "traefik.http.routers.musicseerr.tls=true"
+            - "traefik.http.routers.musicseerr.tls.certresolver=cloudflare"
+            - "traefik.http.services.musicseerr.loadbalancer.server.port=8688"
+        volumes:
+            - ./musicseerr/config:/app/config
+            - ./musicseerr/cache:/app/cache
+            - /home/tuckeraa/media:/music:ro
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # ===========================================================================
+    # 6. PLAYBACK
+    # ===========================================================================
+
+    # --- jellyfin --------------------------------------------------------------
+    # Media server / playback frontend for the whole library, with NVIDIA GPU
+    # transcoding enabled. Two Traefik routers share one upstream service so
+    # the same container can serve two "sites":
+    #      - `media.${INTERNAL_DOMAIN:-internal.valdeze.ch}`            -> normal access, no extra headers.
+    #      - `guestmedia.${INTERNAL_DOMAIN:-internal.valdeze.ch}` -> guest access; the
+    #          `jellyfin-guest-auth` middleware injects an
+    #          `X-Forwarded-User: Guest` header on every request, which must match
+    #          Jellyfin's Header Auth plugin configuration exactly to work.
+    #
+    # Key options:
+    #      NVIDIA_VISIBLE_DEVICES / NVIDIA_DRIVER_CAPABILITIES - expose the host
+    #          GPU inside the container for hardware transcoding; paired with the
+    #          `deploy.resources.reservations.devices` block requesting the GPU.
+    #      ports 7359/udp, 1900/udp - Jellyfin's client-discovery (DLNA/auto-
+    #          discover) broadcasts, which Traefik can't proxy (it's UDP, not HTTP),
+    #          so these stay published directly on the host. HTTP itself (8096) is
+    #          now served exclusively through Traefik and is not published.
+    #      networks - attached to BOTH MediaServer and shared-services: the
+    #          `traefik.docker.network=shared-services` label pins Traefik to reach
+    #          Jellyfin over that second network specifically, so both must be
+    #          present for routing to work.
+    jellyfin:
+#        build:
+#            context: .
+#            dockerfile: Dockerfile.jellyfin
+#        image: servarr-jellyfin:local
+#        container_name: jellyfin
+        image: lscr.io/linuxserver/jellyfin:latest
+        container_name: jellyfin
+        environment:
+            <<: *env_common
+#            JELLYFIN_PublishedServerUrl: "https://media.valdeze.ch"
+            NVIDIA_VISIBLE_DEVICES: all
+            NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                        - driver: nvidia
+                          count: 1
+                          capabilities: [gpu]
+
+        volumes:
+            - ./jellyfin:/config
+            - ./jellyfin/custom-cont-init.d:/custom-cont-init.d:ro
+            - /home/tuckeraa/media:/data/media
+
+        # HTTP (8096) is now served exclusively through Traefik - only the UDP
+        # discovery ports (which Traefik can't proxy) remain published to the host.
+        ports:
+            - "7359:7359/udp"
+            - "1900:1900/udp"
+
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=shared-services"
+
+            # Shared upstream
+            - "traefik.http.services.jellyfin-svc.loadbalancer.server.port=8096"
+
+            # Normal site: no identity header injected
+            - "traefik.http.routers.jellyfin.rule=Host(`media.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.jellyfin.entrypoints=websecure"
+            - "traefik.http.routers.jellyfin.tls=true"
+            - "traefik.http.routers.jellyfin.tls.certresolver=cloudflare"
+            - "traefik.http.routers.jellyfin.service=jellyfin-svc"
+
+            # Guest site: inject identity header on every upstream request
+            - "traefik.http.routers.jellyfin-guest.rule=Host(`guestmedia.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.jellyfin-guest.entrypoints=websecure"
+            - "traefik.http.routers.jellyfin-guest.tls=true"
+            - "traefik.http.routers.jellyfin-guest.tls.certresolver=cloudflare"
+            - "traefik.http.routers.jellyfin-guest.service=jellyfin-svc"
+            - "traefik.http.routers.jellyfin-guest.middlewares=jellyfin-guest-auth"
+
+            # Must match the Header Auth plugin configuration exactly
+            - "traefik.http.middlewares.jellyfin-guest-auth.headers.customrequestheaders.X-Forwarded-User=Guest"
+
+        # NOTE: the label above pins Traefik to reach jellyfin via
+        # "shared-services", so jellyfin is attached to both networks here (it
+        # was previously only on MediaServer, which would have made that label
+        # ineffective).
+        networks:
+            - MediaServer
+            - shared-services
+
+        restart: unless-stopped
+
+
+    # --- navidrome -------------------------------------------------
+    # Dedicated music streaming server (Subsonic-compatible API), as an
+    # alternative to using Jellyfin for music playback.
+    navidrome:
+        image: deluan/navidrome:latest
+        container_name: navidrome
+        user: ${PUID}:${PGID}
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.navidrome.rule=Host(`navidrome.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.navidrome.entrypoints=websecure"
+            - "traefik.http.routers.navidrome.tls=true"
+            - "traefik.http.routers.navidrome.tls.certresolver=cloudflare"
+            - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+        environment:
+            <<: *env_common
+            ND_CACHEFOLDER: /cache
+        volumes:
+            - ./navidrome:/data
+            - ./cache/navidrome:/cache
+            - /home/tuckeraa/media/library/music:/music:ro
+
+    # --- picard ----------------------------------------------------
+    # MusicBrainz Picard, web-accessible (jlesage's noVNC-wrapped image), for
+    # manually tagging/fixing music metadata.
+    picard:
+        image: jlesage/musicbrainz-picard:latest
+        container_name: picard
+        environment:
+            USER_ID: ${PUID}
+            GROUP_ID: ${PGID}
+            TZ: ${TZ}
+            DARK_MODE: 1
+        volumes:
+            - ./picard:/config:rw
+            - /home/tuckeraa/media:/storage:rw
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.picard.rule=Host(`picard.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.picard.entrypoints=websecure"
+            - "traefik.http.routers.picard.tls=true"
+            - "traefik.http.routers.picard.tls.certresolver=cloudflare"
+            - "traefik.http.services.picard.loadbalancer.server.port=5800"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- jellystat-db ----------------------------------------------------------
+    # Postgres database backing Jellystat below. Kept as its own container
+    # because that's how upstream Jellystat expects to be run; no Traefik
+    # labels since nothing needs to reach it except the jellystat container.
+    jellystat-db:
+        image: postgres:15.2
+        container_name: jellystat-db
+        environment:
+            <<: *env_common
+            POSTGRES_USER: ${JELLYSTAT_POSTGRES_USER}
+            POSTGRES_PASSWORD: ${JELLYSTAT_POSTGRES_PASSWORD}
+        volumes:
+            - ./jellystat/db:/var/lib/postgresql/data
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- jellystat ---------------------------------------------------------------
+    # Watch-history / usage statistics dashboard for Jellyfin (per-user
+    # plays, most-watched, activity over time) - reads from the Jellyfin API
+    # and stores its own history in the jellystat-db postgres instance above.
+    #
+    # Key options:
+    #      POSTGRES_IP/PORT    - point at the jellystat-db service by container name.
+    #      JWT_SECRET                  - signs Jellystat's own login sessions; generate a
+    #                                                long random string, unrelated to Jellyfin's auth.
+    jellystat:
+        image: cyfershepard/jellystat:latest
+        container_name: jellystat
+        environment:
+            <<: *env_common
+            POSTGRES_USER: ${JELLYSTAT_POSTGRES_USER}
+            POSTGRES_PASSWORD: ${JELLYSTAT_POSTGRES_PASSWORD}
+            POSTGRES_IP: jellystat-db
+            POSTGRES_PORT: 5432
+            JWT_SECRET: ${JELLYSTAT_JWT_SECRET}
+        volumes:
+            - ./jellystat/backup-data:/app/backend/backup-data
+        depends_on:
+            - jellystat-db
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.jellystat.rule=Host(`stats.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.jellystat.entrypoints=websecure"
+            - "traefik.http.routers.jellystat.tls=true"
+            - "traefik.http.routers.jellystat.tls.certresolver=cloudflare"
+            - "traefik.http.services.jellystat.loadbalancer.server.port=3000"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # ===========================================================================
+    # 7. LIVE TV
+    # ===========================================================================
+
+    # --- dispatcharr ---------------------------------------------------------
+    # IPTV/live-TV proxy and EPG manager (stream tuning, channel mapping),
+    # exposed to Jellyfin/clients as a Live TV source. Runs its own bundled
+    # Redis + Celery worker in "aio" (all-in-one) mode, with GPU access
+    # reserved for stream transcoding.
+    #
+    # Key options:
+    #      DISPATCHARR_ENV=aio    - runs web + worker + Redis in one container
+    #                                                    instead of separate services.
+    #      deploy.resources.limits - hard caps this container at 2 GB RAM / 2 CPUs.
+    dispatcharr:
+        image: ghcr.io/dispatcharr/dispatcharr:latest
+        container_name: dispatcharr
+        restart: unless-stopped
+        networks:
+            - MediaServer
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.dispatcharr.rule=Host(`dispatcharr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.dispatcharr.entrypoints=websecure"
+            - "traefik.http.routers.dispatcharr.tls=true"
+            - "traefik.http.routers.dispatcharr.tls.certresolver=cloudflare"
+            - "traefik.http.services.dispatcharr.loadbalancer.server.port=9191"
+        volumes:
+            - ./dispatcharr:/data
+        environment:
+            <<: *env_common
+            DISPATCHARR_ENV: aio
+            REDIS_HOST: localhost
+            CELERY_BROKER_URL: redis://localhost:6379/0
+            DISPATCHARR_LOG_LEVEL: info
+        deploy:
+            resources:
+                limits:
+                    memory: 2g
+                    cpus: "2.0"
+                reservations:
+                    devices:
+                        - driver: nvidia
+                          count: 1
+                          capabilities: [gpu]
+
+    # ===========================================================================
+    # 8. STORAGE / FILE ACCESS
+    # ===========================================================================
+
+    # --- rclone-webgui ---------------------------------------------------------
+    # Runs `rclone rcd` with its web GUI enabled, for managing/mounting remote
+    # cloud storage (e.g. as an extra media source) with a local disk cache.
+    #
+    # Key options:
+    #      cap_add: SYS_ADMIN + /dev/fuse + apparmor:unconfined - required for
+    #          rclone to mount remotes as FUSE filesystems inside the container.
+    #      media volume `:shared`          - propagates mounts made inside the
+    #          container back out to the host/other containers sharing that mount
+    #          namespace.
+    #      --transfers / --checkers / --buffer-size / --fast-list / --s3-* -
+    #          throughput tuning flags for the rclone remote-control daemon.
+    rclone-webgui:
+        image: rclone/rclone:latest
+        container_name: rclone-webgui
+        user: ${PUID}:${PGID}
+        cap_add:
+            - SYS_ADMIN
+        devices:
+            - /dev/fuse:/dev/fuse
+        security_opt:
+            - apparmor:unconfined
+        environment:
+            TZ: ${TZ}
+        volumes:
+            - ./rclone:/config/rclone
+            - ./cache/rclone:/cache
+            - /home/tuckeraa/media:/data/media:shared
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.rclone-webgui.rule=Host(`rclone.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.rclone-webgui.entrypoints=websecure"
+            - "traefik.http.routers.rclone-webgui.tls=true"
+            - "traefik.http.routers.rclone-webgui.tls.certresolver=cloudflare"
+            - "traefik.http.services.rclone-webgui.loadbalancer.server.port=5572"
+        command: >
+            rcd
+            --rc-web-gui
+            --rc-web-gui-no-open-browser
+            --rc-addr=:5572
+            --rc-user=${RCLONE_USER}
+            --rc-pass=${RCLONE_PASS}
+            --rc-serve
+            --cache-dir=/cache
+            --transfers=8
+            --checkers=16
+            --buffer-size=64M
+            --fast-list
+            --s3-chunk-size=64M
+            --s3-upload-concurrency=8
+            --log-level=INFO
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # --- filestash -------------------------------------------------------------
+    # Web-based file browser/manager for the media directory (and, potentially,
+    # other backends Filestash supports) - handy for quick manual file
+    # operations without SSH/SFTP.
+    filestash:
+        image: machines/filestash:latest
+        container_name: filestash
+        environment:
+            TZ: ${TZ}
+            APPLICATION_URL: ""
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.filestash.rule=Host(`filestash.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.filestash.entrypoints=websecure"
+            - "traefik.http.routers.filestash.tls=true"
+            - "traefik.http.routers.filestash.tls.certresolver=cloudflare"
+            - "traefik.http.services.filestash.loadbalancer.server.port=8334"
+        volumes:
+            - ./filestash:/app/data/state
+            - /home/tuckeraa/media:/mnt/media
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # ===========================================================================
+    # 9. DASHBOARD
+    # ===========================================================================
+
+    # --- homepage ----------------------------------------------------------------
+    # Single-page dashboard (gethomepage.dev) with live widgets - queue counts,
+    # download speed, disk space, etc. - pulled from each service's own API, so
+    # you don't have to bounce between a dozen subdomains to check on things.
+    # Config (services.yaml, widgets.yaml, etc.) lives entirely in
+    # ./homepage/config and is edited by hand or through the UI.
+    #
+    # Key options:
+    #      HOMEPAGE_ALLOWED_HOSTS - must include whatever hostname you reach it on
+    #                                                        (Homepage rejects requests with an unrecognized
+    #                                                        Host header), kept in sync with INTERNAL_DOMAIN.
+    #      docker.sock mount              - read-only, lets Homepage auto-discover
+    #                                                        containers and their labels for status/widgets;
+    #                                                        omit it if you'd rather configure everything by
+    #                                                        hand in services.yaml.
+    homepage:
+        image: ghcr.io/gethomepage/homepage:latest
+        container_name: homepage
+        environment:
+            <<: *env_common
+            HOMEPAGE_ALLOWED_HOSTS: home.${INTERNAL_DOMAIN:-internal.valdeze.ch}
+        volumes:
+            - ./homepage/config:/app/config
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.homepage.rule=Host(`home.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.homepage.entrypoints=websecure"
+            - "traefik.http.routers.homepage.tls=true"
+            - "traefik.http.routers.homepage.tls.certresolver=cloudflare"
+            - "traefik.http.services.homepage.loadbalancer.server.port=3000"
+        networks:
+            - MediaServer
+        restart: unless-stopped
+
+    # ===========================================================================
+    # 10. BACKUPS
+    # ===========================================================================
+
+    # --- duplicati -----------------------------------------------------------
+    # Scheduled, encrypted, incremental backups of every service's config
+    # volume - the actual settings/database/history for each *arr app,
+    # Jellyfin, Overseerr, etc. This is what makes the whole stack
+    # recoverable if the host is lost; the media library itself is not backed
+    # up here (it's re-downloadable), only configuration and state.
+    #
+    # Each source directory below is mounted read-only under /source/<name>
+    # so it's easy to tell what's what when picking backup sets in the UI.
+    # Configure the actual backup job (schedule, retention, and - importantly
+    # - a remote destination such as the rclone remote or S3/B2/etc.) through
+    # Duplicati's web UI after first start; nothing is scheduled by default.
+    #
+    # Key options:
+    #      DUPLICATI__WEBSERVICE_PASSWORD - sets the web UI login password on
+    #                                                                        first start (LinuxServer.io image).
+    duplicati:
+        image: lscr.io/linuxserver/duplicati:latest
+        container_name: duplicati
+        environment:
+            <<: *env_common
+            DUPLICATI__WEBSERVICE_PASSWORD: ${DUPLICATI_WEBUI_PASSWORD}
+            SETTINGS_ENCRYPTION_KEY: ${DUPLICATI_SETTINGS_ENCRYPTION_KEY}
+        volumes:
+            - ./duplicati/config:/config
+            - ./duplicati/backups:/backups
+            - ./sonarr:/source/sonarr:ro
+            - ./radarr:/source/radarr:ro
+            - ./bazarr:/source/bazarr:ro
+            - ./prowlarr:/source/prowlarr:ro
+            - ./profilarr-v2:/source/profilarr-v2:ro
+            - ./overseerr:/source/overseerr:ro
+            - ./Suggestarr:/source/Suggestarr:ro
+            - ./jellyfin:/source/jellyfin:ro
+            - ./jellystat:/source/jellystat:ro
+            - ./dispatcharr:/source/dispatcharr:ro
+            - ./homepage:/source/homepage:ro
+            - ./nzbget:/source/nzbget:ro
+            - ./nzbget2:/source/nzbget2:ro
+            - /docker/Authentik/pgdump:/source/authentik/pgdump:ro
+            - /docker/Authentik/data:/source/authentik/data:ro
+            - /docker/Authentik/templates:/source/authentik/templates:ro
+            - /docker/Authentik/certs:/source/authentik/certs:ro
+            - /docker/YTzero/data:/source/ytzero/data:ro
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.duplicati.rule=Host(`duplicati.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.duplicati.entrypoints=websecure"
+            - "traefik.http.routers.duplicati.tls=true"
+            - "traefik.http.routers.duplicati.tls.certresolver=cloudflare"
+            - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+        networks:
+            - MediaServer
+        restart: unless-stopped

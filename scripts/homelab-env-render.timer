@@ -1,0 +1,13 @@
+# systemd timer -- refreshes rendered .env files periodically (independent of
+# Arcane's own Git-sync/redeploy schedule). Install alongside the .service
+# file, then: systemctl daemon-reload && systemctl enable --now homelab-env-render.timer
+[Unit]
+Description=Periodically render homelab .env files from Infisical
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

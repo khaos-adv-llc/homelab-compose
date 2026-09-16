@@ -1,0 +1,11 @@
+# systemd unit -- runs render-env.sh once. Install to
+# /etc/systemd/system/homelab-env-render.service on the homelab host.
+[Unit]
+Description=Render homelab .env files from Infisical
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/docker/homelab-compose/scripts/render-env.sh
+# Adjust the path above to wherever this repo is actually checked out on the host.

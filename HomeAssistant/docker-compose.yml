@@ -1,0 +1,119 @@
+services:
+    homeassistant:
+        image: ${HA_IMAGE}:${HA_TAG}
+        container_name: ${HA_CONTAINER_NAME}
+        restart: unless-stopped
+        network_mode: host
+        privileged: true
+
+        environment:
+            TZ: ${TZ}
+
+        volumes:
+            - ./homeassistant/config:/config
+            - /etc/localtime:/etc/localtime:ro
+            - /run/dbus:/run/dbus:ro
+
+        depends_on:
+            - matter-server
+
+        healthcheck:
+            test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:${HA_PORT}/manifest.json"]
+            interval: 60s
+            timeout: 10s
+            retries: 5
+            start_period: 120s
+        
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.homeassistant.rule=Host(`ha.internal.valdeze.ch`)"
+            - "traefik.http.routers.homeassistant.entrypoints=websecure"
+            - "traefik.http.routers.homeassistant.tls=true"
+            - "traefik.http.routers.homeassistant.tls.certresolver=cloudflare"
+            - "traefik.http.services.homeassistant.loadbalancer.server.port=8123"
+
+    matter-server:
+        image: ${MATTER_IMAGE}:${MATTER_TAG}
+        container_name: ${MATTER_CONTAINER_NAME}
+        restart: unless-stopped
+        network_mode: host
+
+        security_opt:
+            - apparmor=unconfined
+
+        environment:
+            TZ: ${TZ}
+
+        volumes:
+            - ./matter-server/data:/data
+            - /run/dbus:/run/dbus:ro
+            - /etc/localtime:/etc/localtime:ro
+
+        command: >
+            --storage-path /data
+            --paa-root-cert-dir /data/credentials
+            --port ${MATTER_PORT}
+            --bluetooth-adapter ${MATTER_BT_ADAPTER}
+            --log-level ${MATTER_LOG_LEVEL}
+
+    mosquitto:
+        image: ${MQTT_IMAGE}:${MQTT_TAG}
+        container_name: ${MQTT_CONTAINER_NAME}
+        restart: unless-stopped
+        network_mode: host
+
+        environment:
+            TZ: ${TZ}
+
+        volumes:
+            - ./mosquitto/config:/mosquitto/config
+            - ./mosquitto/data:/mosquitto/data
+            - ./mosquitto/log:/mosquitto/log
+    
+    scrypted:
+        image: ghcr.io/koush/scrypted:latest
+        container_name: scrypted
+        restart: unless-stopped
+        network_mode: host
+    
+        environment:
+            TZ: ${TZ}
+
+        volumes:
+            - ./scrypted:/server/volume
+            - /etc/localtime:/etc/localtime:ro
+            - /var/run/dbus:/var/run/dbus
+            - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
+
+        security_opt:
+            - apparmor:unconfined
+        
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.scrypted.rule=Host(`scrypted.internal.valdeze.ch`)"
+            - "traefik.http.routers.scrypted.entrypoints=websecure"
+            - "traefik.http.routers.scrypted.tls=true"
+            - "traefik.http.routers.scrypted.tls.certresolver=cloudflare"
+            - "traefik.http.services.scrypted.loadbalancer.server.port=11080"
+
+    music-assistant-server:
+        image: ghcr.io/music-assistant/server:latest # <<< Desired release version here (or use beta to get the latest beta version)
+        container_name: music-assistant-server
+        restart: unless-stopped
+        # Network mode must be set to host for MA to discover and stream to players (see networking note below)
+        network_mode: host
+        volumes:
+            - ./music-assistant-server/data:/data/
+            # Optional: expose local music to MA by bind-mounting it read-only
+            - /home/tuckeraa/media/library/music:/media:ro
+        environment:
+            # Provide logging level as environment variable.
+            # default=info, possible=(critical, error, warning, info, debug)
+            - LOG_LEVEL=info
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.musicassistant.rule=Host(`music.internal.valdeze.ch`)"
+            - "traefik.http.routers.musicassistant.entrypoints=websecure"
+            - "traefik.http.routers.musicassistant.tls=true"
+            - "traefik.http.routers.musicassistant.tls.certresolver=cloudflare"
+            - "traefik.http.services.musicassistant.loadbalancer.server.port=8095"

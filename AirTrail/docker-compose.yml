@@ -1,0 +1,37 @@
+services:
+    airtrail:
+        image: johly/airtrail:latest
+        container_name: airtrail
+        restart: unless-stopped
+        environment:
+            ORIGIN: https://airtrail.external.valdeze.ch
+            DB_URL: postgres://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE_NAME}
+        depends_on:
+            postgres:
+                condition: service_healthy
+        networks:
+            default:
+            shared-services:
+                aliases:
+                    - airtrail
+
+    postgres:
+        image: postgres:16-alpine
+        container_name: airtrail-postgres
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
+            POSTGRES_DB: ${DB_DATABASE_NAME}
+        volumes:
+            - /docker/AirTrail/postgresql:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
+
+networks:
+    shared-services:
+        external: true

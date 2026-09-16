@@ -1,0 +1,107 @@
+services:
+    mealie:
+        image: ghcr.io/mealie-recipes/mealie:latest
+        container_name: mealie
+        restart: unless-stopped
+        networks:
+            - default
+            - proxy_net
+            - shared-services
+        environment:
+            # Mealie
+            ALLOW_SIGNUP: "false"
+            PUID: "1000"
+            PGID: "1000"
+            TZ: "Europe/Zurich"
+            BASE_URL: "https://meals.valdeze.ch"
+
+            # PostgreSQL
+            DB_ENGINE: "postgres"
+            POSTGRES_USER: "mealie"
+            POSTGRES_PASSWORD: "${MEALIE_DB_PASSWORD}"
+            POSTGRES_SERVER: "mealie-postgres"
+            POSTGRES_PORT: "5432"
+            POSTGRES_DB: "mealie"
+
+                        # Authentik OIDC
+            OIDC_AUTH_ENABLED: "true"
+            OIDC_SIGNUP_ENABLED: "true"
+            OIDC_REQUIRES_EMAIL_VERIFICATION: "false"
+
+            OIDC_CONFIGURATION_URL: "https://auth.valdeze.ch/application/o/mealie/.well-known/openid-configuration"
+            OIDC_CLIENT_ID: "${MEALIE_OIDC_CLIENT_ID}"
+            OIDC_CLIENT_SECRET: "${MEALIE_OIDC_CLIENT_SECRET}"
+
+            OIDC_USER_CLAIM: "email"
+            OIDC_GROUPS_CLAIM: "groups"
+            OIDC_USER_GROUP: "mealie-users"
+            OIDC_ADMIN_GROUP: "mealie-admins"
+
+            OIDC_PROVIDER_NAME: "Authentik"
+            OIDC_AUTO_REDIRECT: "true"
+            
+            # Ollama via its OpenAI-compatible API
+            OPENAI_BASE_URL: "http://paperless-ollama:11434/v1"
+            OPENAI_API_KEY: "ollama"
+            OPENAI_MODEL: "llama3.2:3b"
+
+            # Recommended for higher-quality organizer/category/tag suggestions
+            OPENAI_SEND_DATABASE_DATA: "true"
+
+            # Optional: avoid failures on slower local inference
+            OPENAI_REQUEST_TIMEOUT: "300"
+
+        volumes:
+            - mealie-data:/app/data
+
+        depends_on:
+            mealie-postgres:
+                condition: service_healthy
+
+        deploy:
+            resources:
+                limits:
+                    memory: 1000M
+
+#        labels:
+#            - "traefik.enable=true"
+#            - "traefik.docker.network=proxy_net"
+#            - "traefik.http.routers.mealie.rule=Host(`mealie.internal.valdeze.ch`)"
+#            - "traefik.http.routers.mealie.entrypoints=websecure"
+#            - "traefik.http.routers.mealie.tls=true"
+#            - "traefik.http.routers.mealie.tls.certresolver=letsencrypt"
+#            - "traefik.http.services.mealie.loadbalancer.server.port=9000"
+
+    mealie-postgres:
+        image: postgres:17
+        container_name: mealie-postgres
+        restart: unless-stopped
+
+        environment:
+            POSTGRES_USER: "mealie"
+            POSTGRES_PASSWORD: "${MEALIE_DB_PASSWORD}"
+            POSTGRES_DB: "mealie"
+            PGUSER: "mealie"
+
+        volumes:
+            - mealie-pgdata:/var/lib/postgresql/data
+
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U mealie -d mealie"]
+            interval: 30s
+            timeout: 20s
+            retries: 5
+            start_period: 20s
+
+        networks:
+            - default
+
+volumes:
+    mealie-data:
+    mealie-pgdata:
+
+networks:
+    proxy_net:
+        external: true
+    shared-services:
+        external: true

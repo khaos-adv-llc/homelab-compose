@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+    ytzero:
+        image: ghcr.io/pelski/ytzero:latest
+        container_name: ytzero
+        user: "1000:1000"
+        restart: unless-stopped
+        environment:
+            - YTZERO_AUTH_MODE=oidc
+            - YTZERO_OIDC_ISSUER=${YTZERO_OIDC_ISSUER}
+            - YTZERO_OIDC_CLIENT_ID=${YTZERO_OIDC_CLIENT_ID}
+            - YTZERO_OIDC_CLIENT_SECRET=${YTZERO_OIDC_CLIENT_SECRET}
+            - YTZERO_BASE_URL=https://yt.valdeze.ch
+        volumes:
+            - ./data:/data
+        networks:
+            - shared-services
+
+networks:
+    shared-services:
+        external: true

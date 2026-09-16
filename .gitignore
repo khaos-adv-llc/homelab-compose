@@ -1,0 +1,19 @@
+# Real secrets and rendered env files must never be committed.
+# Only *.env.example (placeholders) belongs in git.
+.env
+.env.*
+!*.env.example
+**/secrets/*.txt
+**/secrets/*.key
+**/secrets/*.pem
+*.pem
+*.key
+
+# Local editor/OS noise
+.DS_Store
+*.swp
+
+# Arcane / Docker local state that shouldn't be versioned
+**/data/
+**/backups/
+**/builds/
