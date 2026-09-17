@@ -1,81 +1,63 @@
-# Infisical, self-hosted -- the ONE stack in this repo that gets deployed the
-# old-fashioned way first, since it can't hand out secrets for its own
-# deployment before it exists. Its own DB credentials use file-based Docker
-# secrets, matching the postgres pattern already in use, rather than
-# being pulled from Infisical itself.
-#
-# CHECK BEFORE DEPLOYING: verify the current image tags and required
-# environment variables against Infisical's own self-hosting docs
-# (https://infisical.com/docs/self-hosting/deployment-options/docker-compose)
-# -- this file is a starting skeleton built from that general pattern, not a
-# guaranteed-current copy of it.
-#
-# After this is up: create the "Homelab" org/project, one folder per stack
-# (matching this repo's layout) plus a `shared` folder, and a machine
-# identity (Universal Auth, read-only to secrets) for scripts/render-env.sh.
+secrets:
+  infisical_db_pw:
+    file: ./secrets/infisical_db_pw.txt
 
 services:
-    infisical-db:
-        image: postgres:16-alpine
-        container_name: infisical-db
-        restart: unless-stopped
-        environment:
-            POSTGRES_USER_FILE: /run/secrets/infisical_pg_user
-            POSTGRES_PASSWORD_FILE: /run/secrets/infisical_pg_pw
-            POSTGRES_DB: infisical
-        secrets:
-            - infisical_pg_user
-            - infisical_pg_pw
-        volumes:
-            - ./db:/var/lib/postgresql/data
-        networks:
-            - shared-services
-        healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U \"$$(cat /run/secrets/infisical_pg_user)\" -d infisical"]
-            interval: 10s
-            timeout: 5s
-            retries: 6
-            start_period: 20s
+  backend:
+    container_name: infisical-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    image: infisical/infisical:latest # PIN THIS TO A SPECIFIC TAG
+    pull_policy: always
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+    networks:
+      - infisical
+      - shared-services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=shared-services"
+      - "traefik.http.routers.infisical.rule=Host(`infisical.internal.valdeze.ch`)"
+      - "traefik.http.routers.infisical.entrypoints=websecure"
+      - "traefik.http.routers.infisical.tls.certresolver=cloudflare"
+      - "traefik.http.services.infisical.loadbalancer.server.port=8080"
 
-    infisical-redis:
-        image: redis:7-alpine
-        container_name: infisical-redis
-        restart: unless-stopped
-        volumes:
-            - ./redis:/data
-        networks:
-            - shared-services
+  redis:
+    image: redis
+    container_name: infisical-redis
+    env_file: .env
+    restart: always
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      - infisical
+    volumes:
+      - redis_data:/data
 
-    infisical:
-        image: infisical/infisical:latest
-        container_name: infisical
-        restart: unless-stopped
-        depends_on:
-            infisical-db:
-                condition: service_healthy
-        environment:
-            ENCRYPTION_KEY_FILE: /run/secrets/infisical_encryption_key
-            AUTH_SECRET_FILE: /run/secrets/infisical_auth_secret
-            DB_CONNECTION_URI_FILE: /run/secrets/infisical_db_uri
-            REDIS_URL: redis://infisical-redis:6379
-            SITE_URL: https://infisical.internal.valdeze.ch
-        secrets:
-            - infisical_encryption_key
-            - infisical_auth_secret
-            - infisical_db_uri
-        networks:
-            - shared-services
-            - proxy_net
-        labels:
-            - "traefik.enable=true"
-            - "traefik.docker.network=proxy_net"
-            - "traefik.http.routers.infisical.rule=Host(`infisical.internal.valdeze.ch`)"
-            - "traefik.http.routers.infisical.entrypoints=websecure"
-            - "traefik.http.routers.infisical.tls=true"
-            - "traefik.http.routers.infisical.tls.certresolver=cloudflare"
-            - "traefik.http.services.infisical.loadbalancer.server.port=8080"
-        # Deliberately LAN-only (internal.valdeze.ch, no .external hostname) --
-        # this holds every other stack's secrets, don't expose it externally.
+  db:
+    container_name: infisical-db
+    image: postgres:14-alpine
+    restart: always
+    env_file: .env
+    secrets:
+      - infisical_db_pw
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/infisical_db_pw
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - infisical
+    healthcheck:
+      test: "pg_isready --username=${POSTGRES_USER} && psql --username=${POSTGRES_USER} --list"
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
   postgresql-backup:
     image: prodrigestivill/postgres-backup-local:14-alpine
     container_name: infisical-postgresql-backup
@@ -100,20 +82,13 @@ services:
     networks:
       - infisical
 
-secrets:
-    infisical_pg_user:
-        file: ./secrets/infisical_pg_user.txt
-    infisical_pg_pw:
-        file: ./secrets/infisical_pg_pw.txt
-    infisical_encryption_key:
-        file: ./secrets/infisical_encryption_key.txt
-    infisical_auth_secret:
-        file: ./secrets/infisical_auth_secret.txt
-    infisical_db_uri:
-        file: ./secrets/infisical_db_uri.txt
+volumes:
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local
 
 networks:
-    shared-services:
-        external: true
-    proxy_net:
-        external: true
+  infisical:
+  shared-services:
+    external: true
