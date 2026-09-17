@@ -53,7 +53,7 @@ services:
     networks:
       - infisical
     healthcheck:
-      test: "pg_isready --username=${POSTGRES_USER} && psql --username=${POSTGRES_USER} --list"
+      test: "pg_isready --username=${POSTGRES_USER} --dbname=${POSTGRES_DB} && psql --username=${POSTGRES_USER} --dbname=${POSTGRES_DB} --list"
       interval: 5s
       timeout: 10s
       retries: 10
