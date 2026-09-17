@@ -1070,6 +1070,7 @@ services:
             - /docker/Authentik/templates:/source/authentik/templates:ro
             - /docker/Authentik/certs:/source/authentik/certs:ro
             - /docker/YTzero/data:/source/ytzero/data:ro
+            - /docker/Infisical:/source/Infisical:ro
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.duplicati.rule=Host(`duplicati.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
