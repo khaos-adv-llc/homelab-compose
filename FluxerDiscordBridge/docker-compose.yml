@@ -23,6 +23,15 @@ services:
             DISCORD_LEG_UDP_PORT: "5101"
             FLUXER_LEG_UDP_PORT: "5100"
             CONTROL_PORT: "5103"
+            # Python block-buffers stdout by default when it's not a TTY
+            # (always true under Docker) -- without this, print() output
+            # sits in an internal buffer and never reaches `docker logs`
+            # until it fills or the process exits, making the container
+            # look silent even while working normally. Confirmed Sept 17
+            # 2026: `docker logs` showed nothing at all, not even this
+            # container's own boot messages, despite it visibly serving
+            # requests (Up, answering /guilds etc.) the whole time.
+            PYTHONUNBUFFERED: "1"
         networks:
             - bridge-relay
 
