@@ -167,17 +167,40 @@ class Bridge:
         hand-off-claim -- the Discord-side equivalent is discord-leg's
         isGuildAdmin, backed by a well-documented permissions API.
 
-        UNCONFIRMED against docs.fluxer.app: this assumes a
-        GET /guilds/{guild_id}/members/{user_id} endpoint exists and
-        returns either a Discord-style `permissions` bitfield or an
-        owner/admin flag, since Fluxer's HTTP API mirrors Discord's shape
-        elsewhere (channels, OAuth). Re-verify this against the real API
-        (or docs.fluxer.app) before relying on it for anything that
-        matters -- until then, treat every "isAdmin: true" this returns
-        with some suspicion. Fails CLOSED (returns False) on any
-        unexpected response shape or error, rather than guessing "yes".
+        CONFIRMED against the real Fluxer API (Sept 17 2026): the member
+        object (GET /guilds/{guild_id}/members/{user_id}) has NO
+        permissions/is_owner/owner field at all -- it only returns
+        {user, nick, roles: [role_id, ...], ...}. Admin status instead
+        comes from the GUILD object: GET /guilds/{guild_id} returns
+        `owner_id` (the owner is always admin) plus an inline `roles`
+        array, each role carrying its own Discord-style `permissions`
+        bitfield string. A member is admin if they own the guild, or if
+        any role they hold -- including the implicit @everyone role,
+        whose id equals the guild id -- has ADMINISTRATOR (0x8) or
+        MANAGE_GUILD (0x20) set. Permission values can exceed 32 bits
+        (seen "137543147073" on @everyone in a real guild), so these are
+        parsed as plain Python ints, never masked to 32 bits. Fails
+        CLOSED (returns False) on any unexpected response shape or
+        error, rather than guessing "yes".
         """
+        ADMINISTRATOR = 0x8
+        MANAGE_GUILD = 0x20
         try:
+            async with self.http.get(
+                f"{self.api_base}/guilds/{guild_id}", headers=self._headers()
+            ) as resp:
+                if resp.status != 200:
+                    return False
+                guild = await resp.json()
+
+            if str(guild.get("owner_id")) == str(user_id):
+                return True
+
+            role_perms = {
+                str(r["id"]): int(r.get("permissions") or 0)
+                for r in guild.get("roles", [])
+            }
+
             async with self.http.get(
                 f"{self.api_base}/guilds/{guild_id}/members/{user_id}", headers=self._headers()
             ) as resp:
@@ -188,23 +211,14 @@ class Bridge:
             print(f"warning: is_guild_admin check failed for user {user_id} in guild {guild_id}: {exc}")
             return False
 
-        # Path 1: a computed permissions bitfield on the member object.
-        perms = member.get("permissions")
-        if perms is not None:
-            try:
-                bits = int(perms)
-                ADMINISTRATOR = 0x8
-                MANAGE_GUILD = 0x20
-                return bool(bits & ADMINISTRATOR) or bool(bits & MANAGE_GUILD)
-            except (TypeError, ValueError):
-                pass
+        member_role_ids = set(member.get("roles") or [])
+        member_role_ids.add(str(guild_id))  # implicit @everyone role, id == guild id
 
-        # Path 2: an explicit owner/admin flag, if the API exposes one
-        # instead of (or alongside) a bitfield.
-        if member.get("is_owner") or member.get("owner"):
-            return True
+        bits = 0
+        for role_id in member_role_ids:
+            bits |= role_perms.get(str(role_id), 0)
 
-        return False
+        return bool(bits & ADMINISTRATOR) or bool(bits & MANAGE_GUILD)
 
     async def list_admin_guilds(self, user_id: str) -> list:
         guilds = await self.list_guilds()
