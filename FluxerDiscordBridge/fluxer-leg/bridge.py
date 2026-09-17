@@ -349,17 +349,33 @@ class Bridge:
             frames_received += 1
             if frames_received <= 10 or frames_received % 250 == 0:
                 print(f"[audio-in] received {frames_received} frames from discord-leg (len={len(data)})")
-            frame = rtc.AudioFrame.create(SAMPLE_RATE, CHANNELS, SAMPLES_PER_FRAME)
-            frame.data[:] = data
-            if frames_received <= 10:
-                print(f"[audio-in] capture_frame #{frames_received} starting")
+            # Everything from here down used to be unguarded -- an exception
+            # in AudioFrame.create() or the data assignment (neither of
+            # which was inside any try/except) would silently kill this
+            # whole background task, since it's a fire-and-forget
+            # asyncio.create_task() that nothing ever awaits or checks the
+            # result of. asyncio swallows that kind of dead-task exception
+            # by default. Confirmed Sept 17 2026: logs showed exactly one
+            # "received 1 frames" line and then total silence -- not even
+            # the unconditional, no-await "capture_frame #1 starting" print
+            # that comes right after it in source -- which is only possible
+            # if something threw before reaching it. This wraps the whole
+            # block and logs+continues instead of dying quietly.
             try:
+                frame = rtc.AudioFrame.create(SAMPLE_RATE, CHANNELS, SAMPLES_PER_FRAME)
+                if frames_received <= 10:
+                    print(f"[audio-in] frame #{frames_received} created ok, assigning data (data len={len(data)}, frame.data len={len(frame.data)})")
+                frame.data[:] = data
+                if frames_received <= 10:
+                    print(f"[audio-in] capture_frame #{frames_received} starting")
                 await self._source.capture_frame(frame)
+                if frames_received <= 10:
+                    print(f"[audio-in] capture_frame #{frames_received} completed")
             except Exception as exc:
-                print(f"[audio-in] capture_frame #{frames_received} RAISED: {type(exc).__name__}: {exc}")
-                raise
-            if frames_received <= 10:
-                print(f"[audio-in] capture_frame #{frames_received} completed")
+                import traceback
+                print(f"[audio-in] pump loop EXCEPTION on frame #{frames_received}: {type(exc).__name__}: {exc}")
+                traceback.print_exc()
+                continue
 
     def status(self) -> dict:
         return {"connected": self.current is not None, "current": self.current}
