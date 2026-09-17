@@ -320,16 +320,45 @@ class Bridge:
         # v1: forwards each remote participant's frames independently
         # rather than sample-summing multiple simultaneous Fluxer
         # speakers -- see README.md's "Notes / gotchas".
-        stream = rtc.AudioStream(track, sample_rate=SAMPLE_RATE, num_channels=CHANNELS)
+        #
+        # This whole method is launched as a fire-and-forget
+        # asyncio.create_task() from on_track_subscribed, with nothing
+        # ever awaiting it or checking .exception() -- the exact same
+        # shape as _pump_discord_audio_into_livekit, which we just found
+        # was silently dying on every single frame due to an unguarded
+        # memoryview exception. Wrapping this defensively too so if it's
+        # failing the same way, we actually see why instead of just
+        # observing "no [audio-out] lines, ever".
+        print(f"[audio-out] relay task starting for track kind={track.kind}")
+        try:
+            stream = rtc.AudioStream(track, sample_rate=SAMPLE_RATE, num_channels=CHANNELS)
+        except Exception as exc:
+            import traceback
+            print(f"[audio-out] AudioStream() construction FAILED: {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            return
         frames_sent = 0
-        async for event in stream:
-            if self.current is None:
-                return
-            pcm_bytes = bytes(event.frame.data)
-            self._udp_out.sendto(pcm_bytes, (DISCORD_LEG_HOST, DISCORD_LEG_UDP_PORT))
-            frames_sent += 1
-            if frames_sent == 1 or frames_sent % 250 == 0:
-                print(f"[audio-out] sent {frames_sent} frames to discord-leg ({DISCORD_LEG_HOST}:{DISCORD_LEG_UDP_PORT})")
+        try:
+            async for event in stream:
+                if self.current is None:
+                    return
+                try:
+                    pcm_bytes = bytes(event.frame.data)
+                    self._udp_out.sendto(pcm_bytes, (DISCORD_LEG_HOST, DISCORD_LEG_UDP_PORT))
+                    frames_sent += 1
+                    if frames_sent <= 10 or frames_sent % 250 == 0:
+                        print(f"[audio-out] sent {frames_sent} frames to discord-leg ({DISCORD_LEG_HOST}:{DISCORD_LEG_UDP_PORT}, len={len(pcm_bytes)})")
+                except Exception as exc:
+                    import traceback
+                    print(f"[audio-out] send loop EXCEPTION on frame #{frames_sent}: {type(exc).__name__}: {exc}")
+                    traceback.print_exc()
+                    continue
+        except Exception as exc:
+            import traceback
+            print(f"[audio-out] AudioStream iteration EXCEPTION after {frames_sent} frames: {type(exc).__name__}: {exc}")
+            traceback.print_exc()
+        finally:
+            print(f"[audio-out] relay task ending for track kind={track.kind} (sent {frames_sent} frames total)")
 
     async def _pump_discord_audio_into_livekit(self):
         loop = asyncio.get_event_loop()
