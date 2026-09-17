@@ -162,49 +162,55 @@ async function refreshLeg(provider) {
   if (!leg.connected) {
     statusEl.textContent = 'Not bridged right now.';
     statusEl.className = 'status';
-    if (data.loggedIn) {
-      pickerEl.hidden = false;
-      connectBtn.hidden = false;
-      if (!pickerLoaded[provider]) {
-        pickerLoaded[provider] = true;
-        await loadGuildsAndChannels(provider);
-      }
-      connectBtn.onclick = async () => {
-        connectBtn.disabled = true;
-        const guildSel = el(`${provider}-guild`);
-        const channelSel = el(`${provider}-channel`);
-        const body = {
-          provider,
-          guildId: guildSel.value,
-          channelId: channelSel.value,
-          guildName: guildSel.options[guildSel.selectedIndex]?.textContent,
-          channelName: channelSel.options[channelSel.selectedIndex]?.textContent,
-        };
-        const r = await fetch('/api/connect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const payload = await r.json();
-        if (!r.ok) {
-          statusEl.textContent = payload.error || 'connect failed';
-          statusEl.className = 'status error';
-        }
-        connectBtn.disabled = false;
-        await refreshLeg(provider);
-      };
-    }
-    return;
+  } else {
+    const name = leg.current?.channelName || leg.current?.channel_name || 'a voice channel';
+    const guild = leg.current?.guildName || leg.current?.guild_name || '';
+    statusEl.textContent = `Bridged: ${name} (${guild})`;
+    statusEl.className = 'status connected';
   }
 
-  pickerLoaded[provider] = false; // reload fresh next time this leg is disconnected
-
-  const name = leg.current?.channelName || leg.current?.channel_name || 'a voice channel';
-  const guild = leg.current?.guildName || leg.current?.guild_name || '';
-  statusEl.textContent = `Bridged: ${name} (${guild})`;
-  statusEl.className = 'status connected';
-
   if (!data.loggedIn) return;
+
+  // The picker stays visible whether or not this leg is already bridged --
+  // picking a different server/channel and clicking the button switches
+  // straight to it (both legs' /connect already tear down any existing
+  // connection before making the new one), instead of forcing a separate
+  // disconnect click first. Loaded once per page load (pickerLoaded), not
+  // on every 5s poll -- see its declaration for why (that's the fix for
+  // the dropdown resetting mid-selection).
+  pickerEl.hidden = false;
+  connectBtn.hidden = false;
+  connectBtn.textContent = leg.connected ? 'Switch here' : 'Connect';
+  if (!pickerLoaded[provider]) {
+    pickerLoaded[provider] = true;
+    await loadGuildsAndChannels(provider);
+  }
+  connectBtn.onclick = async () => {
+    connectBtn.disabled = true;
+    const guildSel = el(`${provider}-guild`);
+    const channelSel = el(`${provider}-channel`);
+    const body = {
+      provider,
+      guildId: guildSel.value,
+      channelId: channelSel.value,
+      guildName: guildSel.options[guildSel.selectedIndex]?.textContent,
+      channelName: channelSel.options[channelSel.selectedIndex]?.textContent,
+    };
+    const r = await fetch('/api/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = await r.json();
+    if (!r.ok) {
+      statusEl.textContent = payload.error || 'connect failed';
+      statusEl.className = 'status error';
+    }
+    connectBtn.disabled = false;
+    await refreshLeg(provider);
+  };
+
+  if (!leg.connected) return;
 
   if (leg.canControl) {
     disconnectBtn.hidden = false;
@@ -246,9 +252,68 @@ async function refreshLeg(provider) {
   }
 }
 
+async function refreshServers(provider, loggedIn) {
+  const sectionEl = el(`${provider}-servers-section`);
+  const listEl = el(`${provider}-servers-list`);
+  if (!loggedIn) {
+    sectionEl.hidden = true;
+    return;
+  }
+  try {
+    const servers = await (await fetch(`/api/servers?provider=${provider}`)).json();
+    if (!Array.isArray(servers) || servers.length === 0) {
+      sectionEl.hidden = true;
+      return;
+    }
+    listEl.innerHTML = '';
+    for (const g of servers) {
+      const row = document.createElement('div');
+      row.className = 'server-row';
+
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = g.name;
+      row.appendChild(name);
+
+      if (g.botPresent) {
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-danger';
+        removeBtn.textContent = 'Remove bridge';
+        removeBtn.onclick = async () => {
+          if (!confirm(`Remove the bridge from "${g.name}"? It'll need to be re-invited to come back.`)) return;
+          removeBtn.disabled = true;
+          const r = await fetch(`/api/guilds/${provider}/${g.id}/leave`, { method: 'POST' });
+          const payload = await r.json();
+          if (!r.ok) {
+            alert(payload.error || 'could not remove the bridge from that server');
+            removeBtn.disabled = false;
+            return;
+          }
+          await refreshAll();
+        };
+        row.appendChild(removeBtn);
+      } else {
+        const addLink = document.createElement('a');
+        addLink.className = 'btn btn-primary';
+        addLink.href = g.inviteUrl;
+        addLink.target = '_blank';
+        addLink.rel = 'noopener noreferrer';
+        addLink.textContent = 'Add bridge';
+        row.appendChild(addLink);
+      }
+
+      listEl.appendChild(row);
+    }
+    sectionEl.hidden = false;
+  } catch {
+    sectionEl.hidden = true;
+  }
+}
+
 async function refreshAll() {
   const me = await refreshMe();
   await Promise.all(['discord', 'fluxer'].map(refreshLeg));
+  await Promise.all(['discord', 'fluxer'].map((p) => refreshServers(p, Boolean(me))));
   return me;
 }
 

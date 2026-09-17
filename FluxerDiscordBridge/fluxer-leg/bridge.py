@@ -228,6 +228,30 @@ class Bridge:
                 results.append(g)
         return results
 
+    async def leave_guild(self, guild_id: str):
+        """Removes the bridge's bot account from a guild entirely.
+
+        Confirmed against docs.fluxer.app (Sept 17 2026): DELETE
+        /v1/users/@me/guilds/{guild_id} accepts a Bot token and "removes
+        the authenticated account's membership", returning 204 with an
+        empty body -- the same shape as Discord's own leave-guild endpoint
+        (DELETE /users/@me/guilds/{guild.id}).
+
+        If the bridge is currently connected to a voice channel in this
+        guild, disconnect first -- leaving the guild out from under an
+        active LiveKit room/voice-state would otherwise leave the bridge
+        in a half-torn-down state.
+        """
+        if self.current is not None and str(self.current.get("guild_id")) == str(guild_id):
+            await self.disconnect()
+
+        async with self.http.delete(
+            f"{self.api_base}/users/@me/guilds/{guild_id}", headers=self._headers()
+        ) as resp:
+            if resp.status not in (200, 204):
+                body = await resp.text()
+                raise RuntimeError(f"leave guild failed: {resp.status} {body}")
+
     async def list_channels(self, guild_id: str) -> list:
         async with self.http.get(f"{self.api_base}/guilds/{guild_id}/channels", headers=self._headers()) as resp:
             resp.raise_for_status()
@@ -499,6 +523,14 @@ def build_app(bridge: Bridge) -> web.Application:
         user_id = request.match_info["user_id"]
         return web.json_response(await bridge.list_admin_guilds(user_id))
 
+    async def post_leave_guild(request):
+        guild_id = request.match_info["guild_id"]
+        try:
+            await bridge.leave_guild(guild_id)
+        except Exception as exc:  # noqa: BLE001 -- surfaced to the panel as-is
+            return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response({"ok": True})
+
     app.router.add_get("/guilds", get_guilds)
     app.router.add_get("/guilds/{guild_id}/channels", get_channels)
     app.router.add_post("/connect", post_connect)
@@ -507,6 +539,7 @@ def build_app(bridge: Bridge) -> web.Application:
     app.router.add_get("/current-members", get_current_members)
     app.router.add_get("/guilds/{guild_id}/members/{user_id}/is-admin", get_is_admin)
     app.router.add_get("/users/{user_id}/admin-guilds", get_admin_guilds)
+    app.router.add_post("/guilds/{guild_id}/leave", post_leave_guild)
     return app
 
 

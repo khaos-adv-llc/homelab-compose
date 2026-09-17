@@ -461,6 +461,25 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Removes the bot from a guild entirely. If that guild is the one
+    // currently bridged, tear the voice connection down first rather than
+    // leaving a half-torn-down connection dangling once the bot is gone.
+    const leaveMatch = url.pathname.match(/^\/guilds\/(\d+)\/leave$/);
+    if (req.method === 'POST' && leaveMatch) {
+      const guildId = leaveMatch[1];
+      try {
+        if (current && current.guildId === guildId) {
+          disconnect();
+        }
+        const guild = await client.guilds.fetch(guildId);
+        await guild.leave();
+        sendJson(res, 200, { ok: true });
+      } catch (err) {
+        sendJson(res, 500, { error: err.message });
+      }
+      return;
+    }
+
     sendJson(res, 404, { error: 'not found' });
   } catch (err) {
     console.error('control API error:', err);

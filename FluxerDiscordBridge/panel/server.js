@@ -258,13 +258,18 @@ async function fetchDiscordOwnedGuilds(accessToken) {
     .map((g) => ({ id: g.id, name: g.name }));
 }
 
-// Fluxer: UNCONFIRMED. Assumes the same `GET /users/@me/guilds` shape
-// works with a Bearer user token (fluxer-leg's bot-token call to the same
-// path is confirmed; the Bearer-token variant for a logged-in user is
-// not). Fails soft to an empty list -- worst case, no invite-suggestion
-// buttons show up for Fluxer until this is verified, which is a strictly
-// safer failure than guessing wrong.
-async function fetchFluxerOwnedGuilds(apiBase, accessToken) {
+// Fluxer: CONFIRMED against docs.fluxer.app (Sept 17 2026). GET
+// /v1/users/@me/guilds accepts a Bearer user token carrying the `guilds`
+// OAuth2 scope and returns each guild's `owner_id` (a snowflake) plus a
+// `permissions` bitfield -- but the bitfield is ONLY populated when
+// Fluxer's own permission lookup for that guild succeeds, and is omitted
+// entirely once the account is in more than 100 guilds. Critically, there
+// is NO `owner` boolean on this endpoint's guild objects -- that was this
+// function's actual bug: it checked `g.owner`, a field this response
+// shape never sets, so every guild you owned or administered silently
+// failed the filter regardless of your real permissions. Ownership is now
+// decided by comparing `owner_id` against the caller's own user id.
+async function fetchFluxerOwnedGuilds(apiBase, accessToken, selfUserId) {
   try {
     const res = await fetch(`${apiBase}/users/@me/guilds`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -272,10 +277,10 @@ async function fetchFluxerOwnedGuilds(apiBase, accessToken) {
     if (!res.ok) return [];
     const guilds = await res.json();
     return guilds
-      .filter((g) => g.owner || (BigInt(g.permissions ?? '0') & (0x8n | 0x20n)) !== 0n)
+      .filter((g) => String(g.owner_id) === String(selfUserId) || (BigInt(g.permissions ?? '0') & (0x8n | 0x20n)) !== 0n)
       .map((g) => ({ id: g.id, name: g.name }));
   } catch (err) {
-    console.warn('fetchFluxerOwnedGuilds failed (non-fatal, unconfirmed endpoint):', err.message);
+    console.warn('fetchFluxerOwnedGuilds failed:', err.message);
     return [];
   }
 }
@@ -443,7 +448,7 @@ app.get('/auth/fluxer/callback', async (req, res) => {
     if (!userRes.ok) throw new Error(`userinfo fetch failed: ${userRes.status}`);
     const user = await userRes.json();
 
-    const ownedGuilds = await fetchFluxerOwnedGuilds(apiBase, access_token); // fails soft to [] -- see its comment
+    const ownedGuilds = await fetchFluxerOwnedGuilds(apiBase, access_token, user.id); // fails soft to [] -- see its comment
 
     await completeLogin(req, res, { provider: 'fluxer', platformUserId: user.id, username: user.username, returnTo, mode, ownedGuilds });
   } catch (err) {
@@ -549,6 +554,66 @@ app.get('/api/invite-suggestions', requireSession, async (req, res) => {
       missing.map(async (g) => ({ ...g, inviteUrl: await buildInviteUrl(provider, g.id) }))
     );
     res.json(withLinks.filter((g) => g.inviteUrl));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Unified "your servers" list: every guild you administer, whether or not
+// the bot has joined it yet -- the union of your own OAuth guild list
+// (works even if the bot was never invited) and the bot's own live
+// admin-guilds check (catches a stale/missing invite-hint cookie). Each
+// entry says whether the bot is currently present, so the UI can offer
+// "add the bridge" or "remove the bridge" as appropriate.
+app.get('/api/servers', requireSession, async (req, res) => {
+  const provider = req.query.provider;
+  if (!LEGS[provider]) {
+    res.status(400).json({ error: 'provider must be discord or fluxer' });
+    return;
+  }
+  try {
+    const [legAdmin, joined] = await Promise.all([
+      adminGuildsFor(provider, req.accountId),
+      legJson(LEGS[provider], '/guilds'),
+    ]);
+    const joinedIds = new Set(joined.map((g) => g.id));
+    const hinted = getInviteHints(req)[provider] || [];
+
+    const byId = new Map();
+    for (const g of legAdmin) byId.set(g.id, { id: g.id, name: g.name });
+    for (const g of hinted) if (!byId.has(g.id)) byId.set(g.id, { id: g.id, name: g.name });
+
+    const results = await Promise.all(
+      [...byId.values()].map(async (g) => {
+        const botPresent = joinedIds.has(g.id);
+        return { ...g, botPresent, inviteUrl: botPresent ? null : await buildInviteUrl(provider, g.id) };
+      })
+    );
+    res.json(results);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Removes the bridge's bot/account entirely from a guild. Admin-gated and
+// re-checked live like every other action here. If that guild happens to
+// be the one currently bridged on this leg, the leg itself disconnects
+// first (see discord-leg's /guilds/:id/leave and fluxer-leg's
+// Bridge.leave_guild) rather than leaving a half-torn-down connection.
+app.post('/api/guilds/:provider/:guildId/leave', requireSession, async (req, res) => {
+  const { provider, guildId } = req.params;
+  if (!LEGS[provider]) {
+    res.status(400).json({ error: 'provider must be discord or fluxer' });
+    return;
+  }
+  if (!(await isAdminOfGuild(provider, guildId, req.accountId))) {
+    res.status(403).json({ error: 'you are not an admin of that guild' });
+    return;
+  }
+  try {
+    const upstream = await fetch(`${LEGS[provider]}/guilds/${guildId}/leave`, { method: 'POST' });
+    const payload = await upstream.json();
+    res.status(upstream.status).json(payload);
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
