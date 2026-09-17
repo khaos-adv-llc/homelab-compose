@@ -86,6 +86,7 @@ let mixerInterval = null;
 // ---------------------------------------------------------------------
 
 const udpOut = dgram.createSocket('udp4');
+let framesSentToFluxer = 0;
 
 function sendMixedFrame() {
   if (activeSpeakers.size === 0) return;
@@ -110,6 +111,10 @@ function sendMixedFrame() {
 
   if (anyContributed) {
     udpOut.send(mixed, Number(FLUXER_LEG_UDP_PORT), FLUXER_LEG_HOST);
+    framesSentToFluxer += 1;
+    if (framesSentToFluxer === 1 || framesSentToFluxer % 250 === 0) {
+      console.log(`[audio-out] sent ${framesSentToFluxer} mixed frames to fluxer-leg (${FLUXER_LEG_HOST}:${FLUXER_LEG_UDP_PORT})`);
+    }
   }
 }
 
@@ -129,7 +134,12 @@ function subscribeToSpeaker(receiver, userId) {
   activeSpeakers.set(userId, state);
 
   const pcmStream = opusStream.pipe(decoder);
+  let loggedFirstChunk = false;
   pcmStream.on('data', (chunk) => {
+    if (!loggedFirstChunk) {
+      loggedFirstChunk = true;
+      console.log(`[audio] first decoded PCM chunk from user ${userId}: ${chunk.length} bytes`);
+    }
     for (let offset = 0; offset + FRAME_BYTES <= chunk.length; offset += FRAME_BYTES) {
       state.pending.push(chunk.subarray(offset, offset + FRAME_BYTES));
     }
@@ -150,8 +160,15 @@ function subscribeToSpeaker(receiver, userId) {
 
 const incomingPcm = new PassThrough();
 const udpIn = dgram.createSocket('udp4');
+let framesReceivedFromFluxer = 0;
 udpIn.on('message', (msg) => {
-  if (current) incomingPcm.write(msg);
+  if (current) {
+    incomingPcm.write(msg);
+    framesReceivedFromFluxer += 1;
+    if (framesReceivedFromFluxer === 1 || framesReceivedFromFluxer % 250 === 0) {
+      console.log(`[audio-in] received ${framesReceivedFromFluxer} frames from fluxer-leg (msg size ${msg.length} bytes)`);
+    }
+  }
 });
 udpIn.bind(Number(DISCORD_LEG_UDP_PORT), () => {
   console.log(`listening for Fluxer-side audio on udp/${DISCORD_LEG_UDP_PORT}`);
@@ -275,6 +292,7 @@ async function connectToChannel(guildId, channelId) {
   connection.subscribe(audioPlayer);
 
   connection.receiver.speaking.on('start', (userId) => {
+    console.log(`[audio] speaking start: user ${userId}`);
     subscribeToSpeaker(connection.receiver, userId);
   });
 

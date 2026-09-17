@@ -257,8 +257,17 @@ class Bridge:
         self._room = rtc.Room()
         self._source = rtc.AudioSource(SAMPLE_RATE, CHANNELS)
 
+        @self._room.on("participant_connected")
+        def on_participant_connected(participant):
+            print(f"[audio] participant connected: {participant.identity}")
+
+        @self._room.on("track_published")
+        def on_track_published(publication, participant):
+            print(f"[audio] track published by {participant.identity}: kind={publication.kind}")
+
         @self._room.on("track_subscribed")
         def on_track_subscribed(track, publication, participant):
+            print(f"[audio] track_subscribed: kind={track.kind} from {participant.identity}")
             if track.kind == rtc.TrackKind.KIND_AUDIO:
                 asyncio.create_task(self._relay_remote_audio(track))
 
@@ -312,15 +321,20 @@ class Bridge:
         # rather than sample-summing multiple simultaneous Fluxer
         # speakers -- see README.md's "Notes / gotchas".
         stream = rtc.AudioStream(track, sample_rate=SAMPLE_RATE, num_channels=CHANNELS)
+        frames_sent = 0
         async for event in stream:
             if self.current is None:
                 return
             pcm_bytes = bytes(event.frame.data)
             self._udp_out.sendto(pcm_bytes, (DISCORD_LEG_HOST, DISCORD_LEG_UDP_PORT))
+            frames_sent += 1
+            if frames_sent == 1 or frames_sent % 250 == 0:
+                print(f"[audio-out] sent {frames_sent} frames to discord-leg ({DISCORD_LEG_HOST}:{DISCORD_LEG_UDP_PORT})")
 
     async def _pump_discord_audio_into_livekit(self):
         loop = asyncio.get_event_loop()
         frame_bytes = SAMPLES_PER_FRAME * CHANNELS * 2  # 16-bit samples
+        frames_received = 0
         while True:
             try:
                 data = await loop.sock_recv(self._udp_in, frame_bytes)
@@ -328,7 +342,12 @@ class Bridge:
                 await asyncio.sleep(0.001)
                 continue
             if len(data) != frame_bytes or self._source is None:
+                if data:
+                    print(f"[audio-in] dropped packet: got {len(data)} bytes, expected {frame_bytes}, source_ready={self._source is not None}")
                 continue  # drop partial/oversized packets rather than desync
+            frames_received += 1
+            if frames_received == 1 or frames_received % 250 == 0:
+                print(f"[audio-in] received {frames_received} frames from discord-leg (len={len(data)})")
             frame = rtc.AudioFrame.create(SAMPLE_RATE, CHANNELS, SAMPLES_PER_FRAME)
             frame.data[:] = data
             await self._source.capture_frame(frame)
