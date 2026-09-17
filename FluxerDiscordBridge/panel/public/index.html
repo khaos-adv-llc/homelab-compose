@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fluxer &harr; Discord Bridge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Radio+Canada+Big:ital,wght@0,400..700;1,400..700&family=Noto+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>Fluxer &harr; Discord Voice Bridge</h1>
+    <p class="subtitle">
+      Log in with Discord or Fluxer. Admins of a bridged server can connect,
+      switch channels, or disconnect on their side; anyone can ask an admin
+      to do it for them with a hand-off link.
+    </p>
+
+    <div id="claim-banner" class="card" hidden></div>
+
+    <div id="logged-out" class="card" hidden>
+      <h2>Log in</h2>
+      <p class="status">Log in with whichever platform you administer a server on.</p>
+      <div class="actions">
+        <a class="btn btn-discord" id="login-discord" href="#">Log in with Discord</a>
+        <a class="btn btn-fluxer" id="login-fluxer" href="#">Log in with Fluxer</a>
+      </div>
+    </div>
+
+    <div id="logged-in" hidden>
+      <div class="card" style="margin-bottom:1.25rem;">
+        <h2>Your accounts</h2>
+        <p class="status" id="identities"></p>
+        <div class="actions" id="link-actions"></div>
+        <p class="footer-note"><a href="/logout">Log out</a></p>
+      </div>
+
+      <div class="columns">
+        <section class="leg" id="leg-discord" data-provider="discord">
+          <h2>Discord side</h2>
+          <p class="status" id="discord-status">Checking&hellip;</p>
+          <div id="discord-picker" hidden>
+            <label>Server
+              <select id="discord-guild"></select>
+            </label>
+            <label>Channel
+              <select id="discord-channel"></select>
+            </label>
+          </div>
+          <div class="actions">
+            <button class="connect-btn" id="discord-connect-btn" hidden>Connect</button>
+            <button class="disconnect-btn" id="discord-disconnect-btn" hidden>Disconnect</button>
+            <button class="btn-primary" id="discord-handoff-btn" hidden>Request admin access</button>
+          </div>
+          <p class="footer-note" id="discord-handoff-link" hidden></p>
+        </section>
+
+        <section class="leg" id="leg-fluxer" data-provider="fluxer">
+          <h2>Fluxer side</h2>
+          <p class="status" id="fluxer-status">Checking&hellip;</p>
+          <div id="fluxer-picker" hidden>
+            <label>Server
+              <select id="fluxer-guild"></select>
+            </label>
+            <label>Channel
+              <select id="fluxer-channel"></select>
+            </label>
+          </div>
+          <div class="actions">
+            <button class="connect-btn" id="fluxer-connect-btn" hidden>Connect</button>
+            <button class="disconnect-btn" id="fluxer-disconnect-btn" hidden>Disconnect</button>
+            <button class="btn-primary" id="fluxer-handoff-btn" hidden>Request admin access</button>
+          </div>
+          <p class="footer-note" id="fluxer-handoff-link" hidden></p>
+        </section>
+      </div>
+    </div>
+
+    <p class="footer-note">
+      Every connect, disconnect and hand-off claim is re-checked live
+      against Discord's/Fluxer's own view of who administers the guild in
+      question -- nothing here is a standing grant.
+    </p>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

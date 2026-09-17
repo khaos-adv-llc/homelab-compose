@@ -1,0 +1,155 @@
+/* Shared theme for both panels (admin web-panel and public user-panel),
+ * styled to feel at home next to a real Fluxer client.
+ *
+ * The --brand*, --space-deep, --success, --danger, and --font-sans values
+ * below were read directly from fluxer.app's live computed styles
+ * (getComputedStyle on :root) on 2026-09-17 -- they are Fluxer's actual
+ * design tokens, not a guess. Fluxer's marketing site didn't expose
+ * dark-mode panel/card/border tokens the same way (its :root surface/ink
+ * vars are light-mode values), so --panel, --panel-border, --text-muted,
+ * and --text-faint below are this project's own extrapolation to fit
+ * those real brand colors into a dark app-panel layout -- close in spirit,
+ * not lifted from Fluxer's actual logged-in client chrome. Worth revising
+ * if you can grab the real values from the client's dark theme later
+ * (open devtools on app.fluxer.app while logged in, same technique).
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* -- real Fluxer tokens -- */
+  --brand: #4641d9;
+  --brand-accent: #6b5ce7;
+  --brand-light: #b0adff;
+  --brand-hover: #3832b8;
+  --bg: #0a0822; /* fluxer.app's --space-deep */
+  --success: oklch(62.7% .194 149.214);
+  --danger: oklch(57.7% .245 27.325);
+  --radius: .75rem;   /* fluxer.app's --radius-control */
+  --radius-sm: .25rem; /* fluxer.app's --radius-sm */
+  --font-sans: 'Radio Canada Big', 'Noto Sans', system-ui, sans-serif;
+
+  /* -- this project's extrapolation, not extracted -- */
+  --panel: #14112e;
+  --panel-border: rgba(176, 173, 255, 0.14); /* --brand-light at low alpha */
+  --text: #ffffff;
+  --text-muted: #a9a5c9;
+  --text-faint: #716c96;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+}
+
+main {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+h1 { margin-bottom: 0.25rem; font-size: 1.6rem; letter-spacing: -.01em; }
+.subtitle { color: var(--text-muted); margin-top: 0; margin-bottom: 2rem; }
+
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .columns { grid-template-columns: 1fr; }
+}
+
+.leg, .card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.leg h2, .card h2 { margin-top: 0; }
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+select {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 0.75rem;
+}
+
+button, .btn {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+}
+
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.connect-btn, .btn-primary { background: var(--brand); color: white; }
+.connect-btn:hover:not(:disabled), .btn-primary:hover { background: var(--brand-hover); }
+
+.disconnect-btn, .btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.btn-discord { background: #4641d9; color: white; } /* matches Fluxer's own brand purple, not Discord's blurple */
+.btn-fluxer { background: var(--brand-accent); color: white; }
+
+.status {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+  min-height: 1.2em;
+}
+
+.status.connected { color: var(--success); }
+.status.error { color: var(--danger); }
+
+.footer-note {
+  margin-top: 2rem;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+a { color: var(--brand-light); }
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--brand);
+  color: white;
+}

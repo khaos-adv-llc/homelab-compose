@@ -1,0 +1,6 @@
+# livekit's Python SDK ships the rtc bindings (room connection, audio
+# tracks/sources/streams) needed to actually join the LiveKit room Fluxer
+# hands us a grant for.
+livekit>=0.19,<1.0
+websockets>=13.0,<14.0
+aiohttp>=3.10,<4.0

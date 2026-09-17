@@ -1,0 +1,89 @@
+services:
+    discord-leg:
+        build: ./discord-leg
+        container_name: fluxer-discord-bridge-discord-leg
+        restart: unless-stopped
+        environment:
+            DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+            FLUXER_LEG_HOST: fluxer-leg
+            FLUXER_LEG_UDP_PORT: "5100"
+            DISCORD_LEG_UDP_PORT: "5101"
+            CONTROL_PORT: "5102"
+        networks:
+            - bridge-relay
+
+    fluxer-leg:
+        build: ./fluxer-leg
+        container_name: fluxer-discord-bridge-fluxer-leg
+        restart: unless-stopped
+        environment:
+            FLUXER_INSTANCE_URL: ${FLUXER_INSTANCE_URL}
+            FLUXER_BOT_TOKEN: ${FLUXER_BOT_TOKEN}
+            DISCORD_LEG_HOST: discord-leg
+            DISCORD_LEG_UDP_PORT: "5101"
+            FLUXER_LEG_UDP_PORT: "5100"
+            CONTROL_PORT: "5103"
+        networks:
+            - bridge-relay
+
+    # --- panel: the ONE control surface, at ONE public URL. ---
+    # v3 design (per Tucker, Sept 17 2026): dropped the earlier two-panel
+    # split (Authentik-gated admin web-panel + OAuth-gated self-service
+    # user-panel) in favor of a single service where "admin" is answered
+    # live, per guild, by asking Discord/Fluxer's own bot whether the
+    # logged-in account is actually an admin of the guild in question --
+    # see panel/server.js's top-of-file comment for the full model,
+    # including the hand-off-link flow for non-admins.
+    #
+    # Routed ONLY via Pangolin (mirrors AirTrail's confirmed pattern) --
+    # no Traefik labels, no internal-only hostname, no proxy_net. This is
+    # a deliberate deviation from this repo's usual
+    # appname.internal.valdeze.ch / appname.external.valdeze.ch split
+    # (Tucker asked for one simple public hostname instead) -- flagging it
+    # explicitly since every other stack in this homelab follows that
+    # split. Register fluxerbridge.valdeze.ch -> this container:8080
+    # directly in Pangolin's dashboard.
+    panel:
+        build: ./panel
+        container_name: fluxer-discord-bridge-panel
+        restart: unless-stopped
+        environment:
+            DISCORD_LEG_HOST: discord-leg
+            DISCORD_LEG_CONTROL_PORT: "5102"
+            FLUXER_LEG_HOST: fluxer-leg
+            FLUXER_LEG_CONTROL_PORT: "5103"
+            PANEL_PORT: "8080"
+            PANEL_DB_PATH: /data/panel.db
+            PUBLIC_BASE_URL: https://fluxerbridge.valdeze.ch
+            SESSION_SECRET: ${USER_PANEL_SESSION_SECRET}
+            DISCORD_OAUTH_CLIENT_ID: ${DISCORD_OAUTH_CLIENT_ID}
+            DISCORD_OAUTH_CLIENT_SECRET: ${DISCORD_OAUTH_CLIENT_SECRET}
+            FLUXER_INSTANCE_URL: ${FLUXER_INSTANCE_URL}
+            FLUXER_OAUTH_CLIENT_ID: ${FLUXER_OAUTH_CLIENT_ID}
+            FLUXER_OAUTH_CLIENT_SECRET: ${FLUXER_OAUTH_CLIENT_SECRET}
+            DISCONNECT_COOLDOWN_SECONDS: "30"
+            HANDOFF_TOKEN_TTL_HOURS: "24"
+        volumes:
+            # Holds panel.db -- linked Discord/Fluxer identities (platform
+            # user IDs + display names only, no tokens -- see panel/db.js)
+            # and hand-off-link records. Not secret, but not disposable
+            # either: wiping it logs everyone's linked-account state out.
+            - fluxer-discord-bridge-panel-data:/data
+        networks:
+            - bridge-relay
+            - shared-services
+
+networks:
+    # Private network for the discord-leg <-> fluxer-leg UDP audio relay,
+    # and panel's control-API calls to the two legs. Deliberately not
+    # `internal: true` -- that would also block the outbound connections
+    # discord-leg and fluxer-leg need to make (Discord/Fluxer gateway and
+    # voice/LiveKit), and panel's outbound OAuth token-exchange calls.
+    bridge-relay:
+        driver: bridge
+
+    shared-services:
+        external: true
+
+volumes:
+    fluxer-discord-bridge-panel-data:
