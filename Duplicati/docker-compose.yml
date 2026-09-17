@@ -1,0 +1,87 @@
+# =============================================================================
+# Duplicati -- scheduled, encrypted, incremental backups
+# =============================================================================
+# Split out of ServarrSuite's compose file (was section "10. BACKUPS" there)
+# so it can be tracked and redeployed independently of the media stack it
+# backs up. Backs up every service's config volume -- the actual
+# settings/database/history for each *arr app, Jellyfin, Overseerr,
+# Authentik, Infisical, YTzero, etc. This is what makes the whole homelab
+# recoverable if the host is lost; media libraries themselves are not backed
+# up here (they're re-downloadable), only configuration and state.
+#
+# Each source directory below is mounted read-only under /source/<name> so
+# it's easy to tell what's what when picking backup sets in the UI. Sources
+# still living under ServarrSuite are referenced by absolute host path
+# (/docker/ServarrSuite/<name>) now that this compose file lives in its own
+# directory -- a relative "./<name>" here would resolve under
+# /docker/Duplicati instead and silently point at nothing.
+#
+# Configure the actual backup job (schedule, retention, and -- importantly --
+# a remote destination such as an rclone remote or S3/B2/etc.) through
+# Duplicati's web UI after first start; nothing is scheduled by default.
+#
+# Key options:
+#      DUPLICATI__WEBSERVICE_PASSWORD - sets the web UI login password on
+#                                                                       first start (LinuxServer.io image).
+#      SETTINGS_ENCRYPTION_KEY                - encrypts Duplicati's own job/database
+#                                                                       config at rest. Losing this after backup
+#                                                                       jobs exist makes those job configs
+#                                                                       unrecoverable (separate from whatever
+#                                                                       per-job encryption passphrase protects the
+#                                                                       backup DATA itself).
+#
+# Networking model:
+#      - "MediaServer" is the only network this needs: Traefik also sits on
+#          it and reaches every container by name. All the /source mounts
+#          below are host bind-mounts, not container-to-container traffic,
+#          so Duplicati doesn't need to share a network with anything it's
+#          backing up.
+# =============================================================================
+
+networks:
+    MediaServer:
+        external: true
+
+services:
+    duplicati:
+        image: lscr.io/linuxserver/duplicati:latest
+        container_name: duplicati
+        environment:
+            PUID: ${PUID}
+            PGID: ${PGID}
+            TZ: ${TZ}
+            UMASK: ${UMASK}
+            DUPLICATI__WEBSERVICE_PASSWORD: ${DUPLICATI_WEBUI_PASSWORD}
+            SETTINGS_ENCRYPTION_KEY: ${DUPLICATI_SETTINGS_ENCRYPTION_KEY}
+        volumes:
+            - ./config:/config
+            - ./backups:/backups
+            - /docker/ServarrSuite/sonarr:/source/sonarr:ro
+            - /docker/ServarrSuite/radarr:/source/radarr:ro
+            - /docker/ServarrSuite/bazarr:/source/bazarr:ro
+            - /docker/ServarrSuite/prowlarr:/source/prowlarr:ro
+            - /docker/ServarrSuite/profilarr-v2:/source/profilarr-v2:ro
+            - /docker/ServarrSuite/overseerr:/source/overseerr:ro
+            - /docker/ServarrSuite/Suggestarr:/source/Suggestarr:ro
+            - /docker/ServarrSuite/jellyfin:/source/jellyfin:ro
+            - /docker/ServarrSuite/jellystat:/source/jellystat:ro
+            - /docker/ServarrSuite/dispatcharr:/source/dispatcharr:ro
+            - /docker/ServarrSuite/homepage:/source/homepage:ro
+            - /docker/ServarrSuite/nzbget:/source/nzbget:ro
+            - /docker/ServarrSuite/nzbget2:/source/nzbget2:ro
+            - /docker/Authentik/pgdump:/source/authentik/pgdump:ro
+            - /docker/Authentik/data:/source/authentik/data:ro
+            - /docker/Authentik/templates:/source/authentik/templates:ro
+            - /docker/Authentik/certs:/source/authentik/certs:ro
+            - /docker/YTzero/data:/source/ytzero/data:ro
+            - /docker/Infisical:/source/Infisical:ro
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.duplicati.rule=Host(`duplicati.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.duplicati.entrypoints=websecure"
+            - "traefik.http.routers.duplicati.tls=true"
+            - "traefik.http.routers.duplicati.tls.certresolver=cloudflare"
+            - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+        networks:
+            - MediaServer
+        restart: unless-stopped

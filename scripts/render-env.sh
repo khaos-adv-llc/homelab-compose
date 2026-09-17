@@ -37,7 +37,7 @@ INFISICAL_CLIENT_SECRET_FILE="/docker/.infisical/client-secret.txt"  # mode 600,
 # secrets path (/<stack>) -- all three now use the real on-host directory
 # names confirmed via `tree -L 2 /docker` plus a couple of targeted `grep`s
 # on Sept 16, 2026 (see homelab-context-brief_1.md's "Real On-Host Directory
-# Names" table). All 18 stacks are listed here, including `postgres`
+# Names" table). All 19 stacks are listed here, including `postgres`
 # (central Postgres already uses Docker secrets files for its own DB
 # credentials, but this still renders anything else its compose references)
 # and low/no-secret stacks like AdGuardHome/FileBrowser/searxng/
@@ -50,6 +50,7 @@ STACKS=(
     Authentik
     AuthentikOutpost
     Cloudflared
+    Duplicati
     EdgeGateway
     FileBrowser
     HomeAssistant
