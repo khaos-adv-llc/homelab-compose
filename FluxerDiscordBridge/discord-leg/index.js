@@ -208,6 +208,22 @@ async function connectToChannel(guildId, channelId) {
     selfMute: false,
   });
 
+  // Temporary, verbose -- @discordjs/voice's own internal state machine and
+  // networking layer report every transition and low-level failure over
+  // 'debug'/'stateChange', which says WHY it's stuck (bad encryption mode
+  // negotiation, invalid discovery response, websocket close code, etc.)
+  // instead of us guessing from a bare 30s timeout or raw packet captures.
+  // Safe to remove once the real cause here is found.
+  connection.on('stateChange', (oldState, newState) => {
+    console.log(`[voice] state: ${oldState.status} -> ${newState.status}`);
+  });
+  connection.on('debug', (message) => {
+    console.log(`[voice-debug] ${message}`);
+  });
+  connection.on('error', (err) => {
+    console.error('[voice] connection-level error:', err);
+  });
+
   console.log(`attempting to join voice: ${channel.name} (${guild.name}) [guild=${guildId} channel=${channelId}]`);
   try {
     await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
