@@ -127,6 +127,14 @@ async function loadGuildsAndChannels(provider) {
   await loadChannels();
 }
 
+// Tracks whether the guild/channel pickers have already been populated
+// for a given provider during the current "not connected" stretch, so
+// the 5s status poll below doesn't keep wiping and rebuilding the
+// <select> elements out from under someone mid-click. Reset to false
+// once that leg connects, so the pickers load fresh next time it's
+// disconnected again.
+const pickerLoaded = { discord: false, fluxer: false };
+
 async function refreshLeg(provider) {
   const statusEl = el(`${provider}-status`);
   const pickerEl = el(`${provider}-picker`);
@@ -157,7 +165,10 @@ async function refreshLeg(provider) {
     if (data.loggedIn) {
       pickerEl.hidden = false;
       connectBtn.hidden = false;
-      await loadGuildsAndChannels(provider);
+      if (!pickerLoaded[provider]) {
+        pickerLoaded[provider] = true;
+        await loadGuildsAndChannels(provider);
+      }
       connectBtn.onclick = async () => {
         connectBtn.disabled = true;
         const guildSel = el(`${provider}-guild`);
@@ -185,6 +196,8 @@ async function refreshLeg(provider) {
     }
     return;
   }
+
+  pickerLoaded[provider] = false; // reload fresh next time this leg is disconnected
 
   const name = leg.current?.channelName || leg.current?.channel_name || 'a voice channel';
   const guild = leg.current?.guildName || leg.current?.guild_name || '';
