@@ -208,7 +208,24 @@ async function connectToChannel(guildId, channelId) {
     selfMute: false,
   });
 
-  await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+  console.log(`attempting to join voice: ${channel.name} (${guild.name}) [guild=${guildId} channel=${channelId}]`);
+  try {
+    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+  } catch (err) {
+    // The bare AbortError from @discordjs/voice's own timeout gives no clue
+    // which channel/guild it was, or that it's a network-level failure, not
+    // a permissions one (permissions were already checked above -- this is
+    // the actual UDP voice handshake with Discord not completing in time).
+    // Most likely: outbound UDP from this container/host isn't reaching
+    // Discord's voice servers -- check firewall/NAT on the path out, not
+    // the bot's Discord-side permissions.
+    connection.destroy();
+    throw new Error(
+      `voice connection to Discord timed out after 30s joining "${channel.name}" (${guild.name}) -- ` +
+        `permissions checked out fine, so this looks like the voice UDP handshake itself isn't completing. ` +
+        `Check outbound UDP connectivity from this container/host to Discord's voice servers. Original error: ${err.message}`
+    );
+  }
   connection.subscribe(audioPlayer);
 
   connection.receiver.speaking.on('start', (userId) => {
