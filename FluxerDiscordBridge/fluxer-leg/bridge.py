@@ -365,7 +365,21 @@ class Bridge:
                 frame = rtc.AudioFrame.create(SAMPLE_RATE, CHANNELS, SAMPLES_PER_FRAME)
                 if frames_received <= 10:
                     print(f"[audio-in] frame #{frames_received} created ok, assigning data (data len={len(data)}, frame.data len={len(frame.data)})")
-                frame.data[:] = data
+                # ROOT CAUSE (confirmed Sept 17 2026): frame.data[:] = data
+                # raised "ValueError: memoryview assignment: lvalue and
+                # rvalue have different structures" on every single frame
+                # since this pipeline was first built -- silently, because
+                # this pump task is fire-and-forget and nothing was ever
+                # catching/logging its exceptions until the debug wrapper
+                # added above. frame.data is a typed memoryview of 16-bit
+                # PCM samples (format 'h', itemsize 2); `data` from the UDP
+                # socket is a plain bytes object (format 'B', itemsize 1).
+                # Same total byte length, but memoryview slice-assignment
+                # requires matching item format, not just matching size.
+                # Casting the incoming bytes to frame.data's own format
+                # before assigning reinterprets the same underlying bytes
+                # without copying, and actually succeeds.
+                frame.data[:] = memoryview(data).cast(frame.data.format)
                 if frames_received <= 10:
                     print(f"[audio-in] capture_frame #{frames_received} starting")
                 await self._source.capture_frame(frame)
