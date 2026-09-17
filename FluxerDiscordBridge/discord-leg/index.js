@@ -26,11 +26,18 @@ import {
   VoiceConnectionStatus,
   entersState,
   getVoiceConnection,
+  generateDependencyReport,
 } from '@discordjs/voice';
 import prism from 'prism-media';
 import dgram from 'node:dgram';
 import http from 'node:http';
 import { PassThrough } from 'node:stream';
+
+// Temporary, one-time-at-boot diagnostic: confirms which optional deps
+// (encryption package, opus encoder, ffmpeg) @discordjs/voice actually
+// detected and is using, rather than us assuming sodium-native "being
+// installed" means it's actually being picked up correctly.
+console.log(generateDependencyReport());
 
 const {
   DISCORD_BOT_TOKEN,
@@ -214,8 +221,31 @@ async function connectToChannel(guildId, channelId) {
   // negotiation, invalid discovery response, websocket close code, etc.)
   // instead of us guessing from a bare 30s timeout or raw packet captures.
   // Safe to remove once the real cause here is found.
+  //
+  // The connection-level 'debug' forwarding didn't surface anything last
+  // time this ran, so this also hooks the networking sub-object directly
+  // (it appears on newState once the connection reaches 'connecting') --
+  // that layer is what actually does the voice-gateway websocket handshake
+  // and UDP setup, and has its own 'debug'/'error'/'close' events.
+  const hookedNetworkings = new WeakSet();
   connection.on('stateChange', (oldState, newState) => {
     console.log(`[voice] state: ${oldState.status} -> ${newState.status}`);
+    const networking = newState.networking;
+    if (networking && !hookedNetworkings.has(networking)) {
+      hookedNetworkings.add(networking);
+      networking.on('stateChange', (oldNetState, newNetState) => {
+        console.log(`[voice-net] state: ${oldNetState.code} -> ${newNetState.code}`);
+      });
+      networking.on('debug', (message) => {
+        console.log(`[voice-net-debug] ${message}`);
+      });
+      networking.on('error', (err) => {
+        console.error('[voice-net] error:', err);
+      });
+      networking.on('close', (code) => {
+        console.warn(`[voice-net] websocket closed, code: ${code}`);
+      });
+    }
   });
   connection.on('debug', (message) => {
     console.log(`[voice-debug] ${message}`);
