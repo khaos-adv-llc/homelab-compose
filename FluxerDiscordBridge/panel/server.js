@@ -23,6 +23,15 @@
 //     some context ("X wants help bridging Y"). Whoever opens it still has
 //     to log in and pass the same live admin check as anyone else. See the
 //     /claim routes below.
+//   - Getting the BOT itself into a new server can't be done from here --
+//     see the invite-suggestions section below for why that's a hard
+//     platform limit, not something this app is choosing not to automate.
+//     What this app DOES do is remove the copy-paste-a-generic-link
+//     friction: after logging in, the panel shows you which of YOUR
+//     servers (per the guild list your OAuth login already reveals) the
+//     bot isn't in yet, with a one-click, pre-filled "add it to THIS
+//     server" link, instead of a single static invite URL you'd have to
+//     hand out and hope people pick the right server.
 //
 // This is what actually lets a non-admin who wants the bridge running ask
 // a real admin to grant it, per Tucker's original "hand off the request to
@@ -50,10 +59,22 @@ const {
 
   DISCORD_OAUTH_CLIENT_ID,
   DISCORD_OAUTH_CLIENT_SECRET,
+  // Must match the Bot Permissions checkboxes actually set on the Discord
+  // application's Bot page (View Channels + Connect + Speak, as of Sept
+  // 17 2026 -- see README.md). If those checkboxes ever change, update
+  // this to match, or invite links generated here will under- or
+  // over-request permissions versus what's configured in the portal.
+  DISCORD_BOT_INVITE_PERMISSIONS = '3146752',
 
   FLUXER_INSTANCE_URL = 'https://fluxer.app',
   FLUXER_OAUTH_CLIENT_ID,
   FLUXER_OAUTH_CLIENT_SECRET,
+  // UNCONFIRMED: Fluxer's bot-invite permissions parameter (if any) hasn't
+  // been verified against a real Fluxer application's Bot page the way
+  // the Discord value above has. Left blank by default (omits the
+  // `permissions` param entirely) until that's checked -- set this once
+  // you know Fluxer's actual bit values, if it uses the same scheme.
+  FLUXER_BOT_INVITE_PERMISSIONS = '',
 
   DISCONNECT_COOLDOWN_SECONDS = '30',
   HANDOFF_TOKEN_TTL_HOURS = '24',
@@ -159,7 +180,110 @@ function finishOAuth(req, res) {
   return { stateOk, returnTo, mode };
 }
 
-async function completeLogin(req, res, { provider, platformUserId, username, returnTo, mode }) {
+// ---------------------------------------------------------------------
+// Invite hints: NOT a security boundary, just UX. Discord's (and,
+// assuming Fluxer's OAuth mirrors it, Fluxer's) `guilds` scope hands back
+// the servers YOU belong to and whether you administer them, straight
+// from the OAuth token exchange -- no bot needed. That's exactly the
+// "which of my servers could this be added to" list, available before
+// the bot has ever joined anything. It's stored in its own short-lived
+// signed cookie, separate from the session cookie, and it is NEVER
+// consulted for an authorization decision (isAdminOfGuild above always
+// asks the leg's bot live) -- it only decides which "add the bridge to
+// this server" buttons the UI bothers to show. Worst case if this list
+// is stale or wrong: a button links to an invite screen for a server you
+// no longer admin, and Discord/Fluxer's own consent screen is what
+// actually stops that, not this app.
+// ---------------------------------------------------------------------
+
+const INVITE_HINTS_COOKIE = 'invite_hints';
+const MAX_HINT_GUILDS = 50; // keep the cookie small regardless of how many servers someone's in
+
+function getInviteHints(req) {
+  try {
+    return JSON.parse(req.signedCookies[INVITE_HINTS_COOKIE] || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function setInviteHints(req, res, provider, guilds) {
+  const current = getInviteHints(req);
+  current[provider] = guilds.slice(0, MAX_HINT_GUILDS);
+  res.cookie(INVITE_HINTS_COOKIE, JSON.stringify(current), {
+    signed: true,
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: SESSION_MAX_AGE_MS,
+  });
+}
+
+// Discord: well-documented. GET /users/@me/guilds with the user's own
+// Bearer token (not the bot's) returns every guild they're in, each with
+// an `owner` flag and a `permissions` bitfield -- no bot presence
+// required. ADMINISTRATOR = 0x8, MANAGE_GUILD = 0x20.
+async function fetchDiscordOwnedGuilds(accessToken) {
+  const res = await fetch('https://discord.com/api/users/@me/guilds', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`guilds fetch failed: ${res.status}`);
+  const guilds = await res.json();
+  return guilds
+    .filter((g) => g.owner || (BigInt(g.permissions ?? '0') & (0x8n | 0x20n)) !== 0n)
+    .map((g) => ({ id: g.id, name: g.name }));
+}
+
+// Fluxer: UNCONFIRMED. Assumes the same `GET /users/@me/guilds` shape
+// works with a Bearer user token (fluxer-leg's bot-token call to the same
+// path is confirmed; the Bearer-token variant for a logged-in user is
+// not). Fails soft to an empty list -- worst case, no invite-suggestion
+// buttons show up for Fluxer until this is verified, which is a strictly
+// safer failure than guessing wrong.
+async function fetchFluxerOwnedGuilds(apiBase, accessToken) {
+  try {
+    const res = await fetch(`${apiBase}/users/@me/guilds`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return [];
+    const guilds = await res.json();
+    return guilds
+      .filter((g) => g.owner || (BigInt(g.permissions ?? '0') & (0x8n | 0x20n)) !== 0n)
+      .map((g) => ({ id: g.id, name: g.name }));
+  } catch (err) {
+    console.warn('fetchFluxerOwnedGuilds failed (non-fatal, unconfirmed endpoint):', err.message);
+    return [];
+  }
+}
+
+async function buildInviteUrl(provider, guildId) {
+  if (provider === 'discord') {
+    const url = new URL('https://discord.com/oauth2/authorize');
+    url.searchParams.set('client_id', DISCORD_OAUTH_CLIENT_ID);
+    url.searchParams.set('scope', 'bot');
+    url.searchParams.set('integration_type', '0');
+    if (DISCORD_BOT_INVITE_PERMISSIONS) url.searchParams.set('permissions', DISCORD_BOT_INVITE_PERMISSIONS);
+    url.searchParams.set('guild_id', guildId);
+    url.searchParams.set('disable_guild_select', 'true');
+    return url.toString();
+  }
+  // Fluxer: UNCONFIRMED URL shape -- mirrors Discord's pattern (per
+  // docs.fluxer.app/http-api/oauth2/ and the app's own OAuth2 URL builder,
+  // which offers an identical-looking `bot` scope + redirect + guild
+  // targeting). Verify against a real Fluxer application before trusting
+  // this link actually adds the bot to the right guild.
+  const apiBase = await getFluxerApiBase();
+  const url = new URL(`${apiBase}/oauth2/authorize`);
+  url.searchParams.set('client_id', FLUXER_OAUTH_CLIENT_ID);
+  url.searchParams.set('scope', 'bot');
+  if (FLUXER_BOT_INVITE_PERMISSIONS) url.searchParams.set('permissions', FLUXER_BOT_INVITE_PERMISSIONS);
+  url.searchParams.set('guild_id', guildId);
+  return url.toString();
+}
+
+async function completeLogin(req, res, { provider, platformUserId, username, returnTo, mode, ownedGuilds }) {
+  if (Array.isArray(ownedGuilds)) setInviteHints(req, res, provider, ownedGuilds);
+
   if (mode === 'link') {
     const existingAccount = getAccountId(req);
     if (!existingAccount) {
@@ -229,9 +353,16 @@ app.get('/auth/discord/callback', async (req, res) => {
     const userRes = await fetch(DISCORD_USER_URL, { headers: { Authorization: `Bearer ${access_token}` } });
     if (!userRes.ok) throw new Error(`user fetch failed: ${userRes.status}`);
     const user = await userRes.json();
+
+    let ownedGuilds = [];
+    try {
+      ownedGuilds = await fetchDiscordOwnedGuilds(access_token);
+    } catch (err) {
+      console.warn('fetchDiscordOwnedGuilds failed (non-fatal -- invite suggestions will be empty):', err.message);
+    }
     // access_token is discarded here -- never persisted (see db.js).
 
-    await completeLogin(req, res, { provider: 'discord', platformUserId: user.id, username: user.username, returnTo, mode });
+    await completeLogin(req, res, { provider: 'discord', platformUserId: user.id, username: user.username, returnTo, mode, ownedGuilds });
   } catch (err) {
     console.error('Discord OAuth error:', err);
     res.status(500).send('Discord login failed -- see server logs');
@@ -288,7 +419,9 @@ app.get('/auth/fluxer/callback', async (req, res) => {
     if (!userRes.ok) throw new Error(`userinfo fetch failed: ${userRes.status}`);
     const user = await userRes.json();
 
-    await completeLogin(req, res, { provider: 'fluxer', platformUserId: user.id, username: user.username, returnTo, mode });
+    const ownedGuilds = await fetchFluxerOwnedGuilds(apiBase, access_token); // fails soft to [] -- see its comment
+
+    await completeLogin(req, res, { provider: 'fluxer', platformUserId: user.id, username: user.username, returnTo, mode, ownedGuilds });
   } catch (err) {
     console.error('Fluxer OAuth error:', err);
     res.status(500).send('Fluxer login failed -- see server logs');
@@ -364,6 +497,34 @@ app.get('/api/my-guilds', requireSession, async (req, res) => {
   }
   try {
     res.json(await adminGuildsFor(provider, req.accountId));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Servers you (per your own OAuth guild list -- see the Invite hints
+// comment above) administer where the bot ISN'T a member yet, each with a
+// ready-to-click invite link. Purely a convenience list -- adding the bot
+// still requires the admin themselves to click through that link and hit
+// Discord's/Fluxer's own Authorize screen; nothing here bypasses that.
+app.get('/api/invite-suggestions', requireSession, async (req, res) => {
+  const provider = req.query.provider;
+  if (!LEGS[provider]) {
+    res.status(400).json({ error: 'provider must be discord or fluxer' });
+    return;
+  }
+  try {
+    const hinted = getInviteHints(req)[provider] || [];
+    if (hinted.length === 0) {
+      res.json([]);
+      return;
+    }
+    const alreadyJoined = new Set((await legJson(LEGS[provider], '/guilds')).map((g) => g.id));
+    const missing = hinted.filter((g) => !alreadyJoined.has(g.id));
+    const withLinks = await Promise.all(
+      missing.map(async (g) => ({ ...g, inviteUrl: await buildInviteUrl(provider, g.id) }))
+    );
+    res.json(withLinks.filter((g) => g.inviteUrl));
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

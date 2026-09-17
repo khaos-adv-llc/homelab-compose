@@ -63,6 +63,16 @@ services:
             FLUXER_OAUTH_CLIENT_SECRET: ${FLUXER_OAUTH_CLIENT_SECRET}
             DISCONNECT_COOLDOWN_SECONDS: "30"
             HANDOFF_TOKEN_TTL_HOURS: "24"
+            # Must match the Bot Permissions checkboxes set on the Discord
+            # application's Bot page (View Channels + Connect + Speak, as
+            # confirmed Sept 17 2026) -- see README.md. Not a secret, just
+            # policy for this stack's own invite links.
+            DISCORD_BOT_INVITE_PERMISSIONS: "3146752"
+            # UNCONFIRMED -- Fluxer's bot-invite permissions parameter
+            # hasn't been verified against a real Fluxer application yet.
+            # Left blank (omits the param) until that's checked. See
+            # panel/server.js's buildInviteUrl.
+            FLUXER_BOT_INVITE_PERMISSIONS: ""
         volumes:
             # Holds panel.db -- linked Discord/Fluxer identities (platform
             # user IDs + display names only, no tokens -- see panel/db.js)
