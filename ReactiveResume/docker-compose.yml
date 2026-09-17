@@ -97,7 +97,7 @@ services:
 #            - "traefik.enable=true"
 #            - "traefik.http.routers.reactive-resume.rule=Host(`resume.${DOMAIN}`)"
 #            - "traefik.http.routers.reactive-resume.entrypoints=websecure"
-#            - "traefik.http.routers.prowlarr.tls=true"
+#            - "traefik.http.routers.reactive-resume.tls=true"
 #            - "traefik.http.routers.reactive-resume.tls.certresolver=cloudflare"
 #            - "traefik.http.services.reactive-resume.loadbalancer.server.port=3000"
 

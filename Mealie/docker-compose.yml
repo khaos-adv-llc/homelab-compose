@@ -66,10 +66,10 @@ services:
 #        labels:
 #            - "traefik.enable=true"
 #            - "traefik.docker.network=proxy_net"
-#            - "traefik.http.routers.mealie.rule=Host(`mealie.internal.valdeze.ch`)"
+#            - "traefik.http.routers.mealie.rule=Host(`meals.valdeze.ch`)"
 #            - "traefik.http.routers.mealie.entrypoints=websecure"
 #            - "traefik.http.routers.mealie.tls=true"
-#            - "traefik.http.routers.mealie.tls.certresolver=letsencrypt"
+#            - "traefik.http.routers.mealie.tls.certresolver=cloudflare"
 #            - "traefik.http.services.mealie.loadbalancer.server.port=9000"
 
     mealie-postgres:
