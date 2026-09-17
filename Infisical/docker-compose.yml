@@ -76,6 +76,29 @@ services:
             - "traefik.http.services.infisical.loadbalancer.server.port=8080"
         # Deliberately LAN-only (internal.valdeze.ch, no .external hostname) --
         # this holds every other stack's secrets, don't expose it externally.
+  postgresql-backup:
+    image: prodrigestivill/postgres-backup-local:14-alpine
+    container_name: infisical-postgresql-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    secrets:
+      - infisical_db_pw
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/infisical_db_pw
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - /docker/Infisical/pgdump:/backups
+    networks:
+      - infisical
 
 secrets:
     infisical_pg_user:
