@@ -61,6 +61,12 @@ services:
             FLUXER_INSTANCE_URL: ${FLUXER_INSTANCE_URL}
             FLUXER_OAUTH_CLIENT_ID: ${FLUXER_OAUTH_CLIENT_ID}
             FLUXER_OAUTH_CLIENT_SECRET: ${FLUXER_OAUTH_CLIENT_SECRET}
+            # web.fluxer.app (what the .well-known/fluxer discovery doc
+            # claims) doesn't resolve (confirmed Sept 17 2026) -- the web
+            # client is still on the canary channel. Remove this once
+            # Fluxer promotes canary to stable and web.fluxer.app actually
+            # resolves; see panel/server.js's FLUXER_WEB_BASE_URL comment.
+            FLUXER_WEB_BASE_URL: https://web.canary.fluxer.app
             DISCONNECT_COOLDOWN_SECONDS: "30"
             HANDOFF_TOKEN_TTL_HOURS: "24"
             # Must match the Bot Permissions checkboxes set on the Discord

@@ -73,6 +73,15 @@ const {
   // own developer portal OAuth2 URL builder: identical bit values to
   // Discord's scheme (View Channels + Connect + Speak = 3146752).
   FLUXER_BOT_INVITE_PERMISSIONS = '3146752',
+  // Override for the OAuth2 authorize (consent screen) host. The
+  // .well-known/fluxer discovery doc's `endpoints.webapp` claims
+  // `web.fluxer.app`, but that host doesn't actually resolve (confirmed
+  // Sept 17 2026, DNS_PROBE_POSSIBLE) -- the real, currently-live web
+  // client is on the canary channel. Set this explicitly rather than
+  // trusting the discovery doc for this one field, and flip it back to
+  // unset (falls through to endpoints.webapp) once Fluxer promotes canary
+  // to stable and web.fluxer.app actually resolves.
+  FLUXER_WEB_BASE_URL = 'https://web.canary.fluxer.app',
 
   DISCONNECT_COOLDOWN_SECONDS = '30',
   HANDOFF_TOKEN_TTL_HOURS = '24',
@@ -105,14 +114,15 @@ async function loadFluxerEndpoints() {
   if (!res.ok) throw new Error(`well-known lookup failed: ${res.status}`);
   const doc = await res.json();
   fluxerApiBase = `${doc.endpoints.api_public}/v1`;
-  // Confirmed Sept 17 2026 against a real Fluxer instance's own discovery
-  // doc: `webapp` (e.g. https://web.fluxer.app) is the browser-facing web
-  // client -- the OAuth2 /authorize (consent screen) page lives THERE, not
-  // under api_public, same split as Discord (discord.com vs discord.com/api).
-  // api_public is still correct for token exchange/userinfo/bot-token API
-  // calls -- only the browser-redirect pages needed to move.
-  fluxerWebBase = doc.endpoints.webapp;
-  if (!fluxerWebBase) throw new Error('well-known doc has no endpoints.webapp');
+  // The OAuth2 /authorize (consent screen) page lives on the browser-facing
+  // web client, not under api_public -- same split as Discord (discord.com
+  // vs discord.com/api). FLUXER_WEB_BASE_URL overrides the discovery doc's
+  // own `endpoints.webapp` (see its definition above for why: that field is
+  // currently wrong/unresolvable). api_public is still correct for token
+  // exchange/userinfo/bot-token API calls -- only the browser-redirect
+  // pages needed a different host.
+  fluxerWebBase = FLUXER_WEB_BASE_URL || doc.endpoints.webapp;
+  if (!fluxerWebBase) throw new Error('no FLUXER_WEB_BASE_URL set and well-known doc has no endpoints.webapp');
 }
 async function getFluxerApiBase() {
   await loadFluxerEndpoints();
