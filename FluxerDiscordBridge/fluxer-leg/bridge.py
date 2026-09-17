@@ -338,7 +338,8 @@ class Bridge:
         while True:
             try:
                 data = await loop.sock_recv(self._udp_in, frame_bytes)
-            except (BlockingIOError, OSError):
+            except (BlockingIOError, OSError) as exc:
+                print(f"[audio-in] sock_recv exception: {type(exc).__name__}: {exc}")
                 await asyncio.sleep(0.001)
                 continue
             if len(data) != frame_bytes or self._source is None:
@@ -346,11 +347,19 @@ class Bridge:
                     print(f"[audio-in] dropped packet: got {len(data)} bytes, expected {frame_bytes}, source_ready={self._source is not None}")
                 continue  # drop partial/oversized packets rather than desync
             frames_received += 1
-            if frames_received == 1 or frames_received % 250 == 0:
+            if frames_received <= 10 or frames_received % 250 == 0:
                 print(f"[audio-in] received {frames_received} frames from discord-leg (len={len(data)})")
             frame = rtc.AudioFrame.create(SAMPLE_RATE, CHANNELS, SAMPLES_PER_FRAME)
             frame.data[:] = data
-            await self._source.capture_frame(frame)
+            if frames_received <= 10:
+                print(f"[audio-in] capture_frame #{frames_received} starting")
+            try:
+                await self._source.capture_frame(frame)
+            except Exception as exc:
+                print(f"[audio-in] capture_frame #{frames_received} RAISED: {type(exc).__name__}: {exc}")
+                raise
+            if frames_received <= 10:
+                print(f"[audio-in] capture_frame #{frames_received} completed")
 
     def status(self) -> dict:
         return {"connected": self.current is not None, "current": self.current}
