@@ -134,6 +134,26 @@ host / in AdGuard Home's own config):
    needs a different mechanism entirely (e.g. a WireGuard tunnel back to
    the LAN).
 
+**Status: working as of Sept 18, 2026.** `https://doh.valdeze.ch/dns-query`
+returns a real `application/dns-message` response end to end
+(Pangolin -> newt -> Traefik -> this container).
+
+The actual root cause during setup, worth remembering: TLS/SNI-based cert
+selection and HTTP `Host()` routing are two independent mechanisms in
+Traefik. The public TLS handshake worked from the very first attempt
+(Traefik correctly selected/served the real `doh.valdeze.ch` Let's
+Encrypt cert by SNI), which made it look like routing was fine -- but
+every actual HTTP request still 404'd, because **Pangolin's resource for
+`doh.valdeze.ch` was forwarding the target's own hostname
+(`traefik-traefik-1`) as the `Host` header instead of the original
+public hostname**, so Traefik's `Host(\`doh.valdeze.ch\`)` rule never
+matched anything. Fixed by setting Pangolin's resource ->
+**Additional Proxy Settings -> Custom Host Header** to `doh.valdeze.ch`
+explicitly (also switched the target scheme from `http` to `https`,
+since Traefik's `websecure` entrypoint on :443 is TLS-only). If this
+kind of "valid cert but 404 on everything" symptom shows up on a future
+Pangolin-fronted service, check the Host header setting first.
+
 ## Notes / gotchas
 
 - The compose file's port section includes several commented-out
