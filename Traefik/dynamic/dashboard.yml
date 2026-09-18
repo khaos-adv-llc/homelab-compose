@@ -54,6 +54,7 @@ http:
         sourceRange:
           - "10.210.40.0/24"
           - "10.210.50.0/24"
+          - "192.168.3.3/32"  # Tucker's laptop WireGuard peer IP
 
     authentik-forward-auth:
       forwardAuth:

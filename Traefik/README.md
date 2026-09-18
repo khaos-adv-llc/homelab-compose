@@ -53,23 +53,63 @@ supports dozens of DNS providers for DNS-01 beyond Cloudflare.
 - **Networks**: `proxy_net` (Traefik's own front-door network),
   `MediaServer`, `shared-services`, and `reactive_resume_network` — enough
   to reach labeled containers across every other network in this homelab.
-- **Git Sync**: wired up like every other non-exempt stack.
+- **Git Sync — important caveat confirmed 2026-09-18**: only `compose.yaml`
+  and `.env` are actually managed by Arcane's Git Sync for this project.
+  `config/`, `dynamic/`, `letsencrypt/`, and `secrets/` are local-only
+  "workspace files" in Arcane — editable there, but **pulling from Git
+  never touches them**, even when the repo has files at those same paths.
+  Concretely: this repo's `config/traefik.yml` and `dynamic/*.yml` are
+  reference copies only. To actually change Traefik's static config or
+  dynamic routing on the live host, edit the files directly in Arcane's
+  project workspace editor (Projects → traefik → Configuration →
+  Workspace) and hit Save there — a git commit/push/pull alone does
+  nothing for these paths. This was the root cause of a routing bug on
+  2026-09-18 (see below) and cost real debugging time; don't assume a
+  green "Sync from Git" implies these files are current.
 - **Secrets**: the Cloudflare DNS API token is mounted as a Docker secrets
   file (not a plain env var) directly in `docker-compose.yml`; the
   Authentik outpost's token (`AUTHENTIK_OUTPOST_TOKEN`) comes from
   Infisical via `render-env.sh`.
 
+## Traefik dashboard replaced (2026-09-18)
+
+The stock Traefik dashboard (`api@internal`, routed at
+`traefik.internal.valdeze.ch`) was replaced with
+[hhftechnology/traefik-log-dashboard](https://github.com/hhftechnology/traefik-log-dashboard)
+— see `../TraefikLogDashboard/README.md` for that stack. To make it work:
+
+- `config/traefik.yml`: `accessLog`/`log` switched from stdout (`{}`) to
+  file-based JSON output (`filePath` + `format: json`), since the
+  dashboard's agent tails a log file.
+- `docker-compose.yml`: the `traefik` service now mounts a named volume,
+  `traefik-logs`, at `/var/log/traefik`, declared with an explicit
+  `name: traefik-logs` (not project-prefixed) so the dashboard stack can
+  attach to it by that exact name.
+- `dynamic/dashboard.yml`: the `traefik-dashboard` router (which pointed at
+  `api@internal`) is commented out, not deleted, and a new
+  `traefik-log-dashboard` router takes over the same hostname, same
+  middleware chain (LAN allowlist + Authentik forward-auth + rate-limit +
+  security-headers).
+- `dashboard-lan-allowlist`'s `sourceRange` also picked up a `/32` for
+  Tucker's laptop's WireGuard peer address (`192.168.3.3/32`) alongside the
+  existing `10.210.40.0/24` and `10.210.50.0/24` — accessing the dashboard
+  over the homelab WireGuard tunnel presents that IP to Traefik, not the
+  laptop's real LAN IP, so it needed its own allowlist entry.
+
 ## Notes / gotchas
 
-- Traefik also mounts `./dynamic:/etc/traefik/dynamic:ro` — a file-based
-  dynamic-configuration provider directory, meaning routing rules can be
-  defined in plain YAML/TOML files there instead of, or in addition to,
-  Docker labels. **As of this writing, the actual contents of `./dynamic`
-  haven't been confirmed** — this is the leading (but unconfirmed)
-  hypothesis for how Authentik, Mealie, Reactive Resume, Trek, and YTzero
-  might be routed despite having no `traefik.*` labels in their own compose
-  files. Worth checking directly before assuming any of those five
-  services are unrouted.
+- `./dynamic:/etc/traefik/dynamic:ro` is a file-based dynamic-configuration
+  provider directory (`watch: true`, so changes apply live with no
+  restart needed). **Contents confirmed 2026-09-18**: `dashboard.yml`
+  (the dashboard router, described above), `shared.yml` (a
+  `security-headers` middleware — also duplicated locally in
+  `dashboard.yml`, a harmless pre-existing redundancy worth cleaning up
+  next time that file is touched), and `tls.yml` (sets the `default` TLS
+  store's cert resolver to `cloudflare` for `internal.valdeze.ch` and its
+  wildcard). This resolves the open question about whether Authentik,
+  Mealie, Reactive Resume, Trek, or YTzero might be routed via this
+  provider — none of them are; it's dashboard/TLS-store config only, and
+  those five services' routing (or lack of it) is unrelated.
 - Both `socket-proxy` and `traefik` itself run `read_only: true` with
   `tmpfs` mounts for their writable paths (`/run`, `/tmp`) — a hardening
   detail worth preserving if this compose file is ever significantly
