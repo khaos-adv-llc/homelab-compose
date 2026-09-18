@@ -55,6 +55,7 @@ services:
             - ./dynamic:/etc/traefik/dynamic:ro
             - ./letsencrypt:/letsencrypt
             - ./secrets/cloudflare_dns_api_token:/run/secrets/cloudflare_dns_api_token:ro
+            - traefik-logs:/var/log/traefik
         networks:
             - proxy_net
             - MediaServer
@@ -90,3 +91,6 @@ networks:
     reactive_resume_network:
         external: true
         name: reactive_resume_network
+volumes:
+    traefik-logs:
+        name: traefik-logs

@@ -1,0 +1,50 @@
+services:
+    traefik-log-agent:
+        image: hhftechnology/traefik-log-dashboard-agent:latest
+        restart: unless-stopped
+        environment:
+            TRAEFIK_LOG_DASHBOARD_ACCESS_PATH: /var/log/traefik/access.log
+            TRAEFIK_LOG_DASHBOARD_ERROR_PATH: /var/log/traefik/traefik.log
+            TRAEFIK_LOG_DASHBOARD_LOG_FORMAT: json
+            TRAEFIK_LOG_DASHBOARD_AUTH_TOKEN_FILE: /run/secrets/tld_auth_token
+            TRAEFIK_LOG_DASHBOARD_SYSTEM_MONITORING: "true"
+        volumes:
+            - traefik-logs:/var/log/traefik:ro
+            - agent-data:/data
+            - ./secrets/tld_auth_token.txt:/run/secrets/tld_auth_token:ro
+        networks:
+            - proxy_net
+        security_opt:
+            - no-new-privileges:true
+
+    traefik-log-dashboard:
+        image: hhftechnology/traefik-log-dashboard:latest
+        restart: unless-stopped
+        depends_on:
+            - traefik-log-agent
+        environment:
+            AGENT_API_URL: http://traefik-log-agent:5000
+            AGENT_API_TOKEN_FILE: /run/secrets/tld_auth_token
+        volumes:
+            - ./secrets/tld_auth_token.txt:/run/secrets/tld_auth_token:ro
+        networks:
+            - proxy_net
+        security_opt:
+            - no-new-privileges:true
+        # No traefik.* labels: this service is routed via Traefik's dynamic
+        # file provider instead (see Traefik/dynamic/dashboard.yml), which
+        # replaced the stock api@internal dashboard router with this one at
+        # the same traefik.internal.valdeze.ch hostname, behind the same
+        # LAN-allowlist + Authentik forward-auth + rate-limit +
+        # security-headers middleware chain.
+
+networks:
+    proxy_net:
+        external: true
+        name: proxy_net
+
+volumes:
+    traefik-logs:
+        external: true
+        name: traefik-logs
+    agent-data:
