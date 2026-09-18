@@ -38,18 +38,58 @@ a single test box.
 
 ## How it fits into this homelab
 
-- **No Traefik labels.** AdGuard Home's web UI is reached directly by
+- **Web UI has no Traefik labels.** It's still reached directly by
   `<host-ip>:3000`, not through a `*.internal.valdeze.ch` hostname — DNS
   servers are usually reached by IP anyway, so this isn't unusual.
-- **No Docker network entries at all** in the compose file — it only
-  publishes ports directly, so it isn't on `shared-services`, `proxy_net`,
-  or `MediaServer`.
+- **DNS-over-HTTPS has a Traefik label + `shared-services` network
+  membership** (added for the `doh.valdeze.ch` remote-DNS setup): a
+  `traefik.http.routers.adguardhome-doh` router routes
+  `doh.valdeze.ch` to this container's internal port 443, with Traefik
+  terminating the real publicly-trusted cert (`certresolver=cloudflare`)
+  and re-encrypting to AdGuard Home's own DoH listener using
+  `insecureSkipVerify` (AdGuard Home's DoH cert itself can be self-signed
+  — see the DNS-over-HTTPS note below). Port 443 is deliberately **not**
+  published to the host here — it would collide with Traefik's own
+  host-published 443 — reachability for this router is purely
+  container-to-container over `shared-services`, which is also how
+  Pangolin/`newt` reaches Traefik itself for the external hop.
+- Otherwise still on no other Docker networks — DNS (53) and the web UI
+  (3000) are still reached by publishing ports directly, not via
+  `proxy_net` or `MediaServer`.
 - **Git Sync**: wired up like every other stack in this repo (see the
   top-level README's bootstrap order) — Arcane pulls this compose file and
   can redeploy it.
 - **Secrets**: none. `render-env.sh` still renders an (empty) `.env` for
   this stack for consistency with every other stack in the `STACKS` array,
   but there's nothing in Infisical for it to pull.
+
+## DNS-over-HTTPS / DNS-over-TLS (remote access)
+
+`doh.valdeze.ch` is set up so devices away from home can use this
+resolver over DoH without any port-forwarding, tunneled the same way
+`arcane.external.valdeze.ch` and other externally-reachable services are:
+`newt` (Pangolin) -> Traefik -> this container, over `shared-services`.
+
+To finish setting this up (steps outside this repo, done directly on the
+host / in AdGuard Home's own config):
+
+1. Enable TLS/encryption in AdGuard Home (Settings -> Encryption
+   settings, or `confdir/AdGuardHome.yaml`'s `tls:` block) with
+   `port_https: 443`, `server_name: doh.valdeze.ch`. The certificate here
+   can be self-signed — Traefik is what presents the real
+   publicly-trusted cert to clients; this is just the internal
+   Traefik<->AdGuard Home hop.
+2. Add a Pangolin resource (HTTP type) for `doh.valdeze.ch` targeting the
+   Traefik container on port 443 (the same way other
+   `*.external.valdeze.ch` services with active Traefik labels are
+   exposed through Pangolin) — not this container directly.
+3. DNS-over-TLS (port 853) has **no equivalent path** here — Pangolin's
+   available resource types (HTTP, AI Gateway, SSH, RDP, VNC, as of Sept
+   2026) don't include a raw TCP/UDP passthrough, and DoT isn't HTTP, so
+   it can't ride the same tunnel as DoH. Unconfirmed whether a newer
+   Pangolin resource type covers this — otherwise DoT-for-away-from-home
+   needs a different mechanism entirely (e.g. a WireGuard tunnel back to
+   the LAN).
 
 ## Notes / gotchas
 

@@ -14,7 +14,10 @@ services:
             # AdGuard Home Web UI / Admin
             - "3000:80/tcp"
           # - "3000:3000/tcp"
-            # DNS-over-HTTPS
+            # DNS-over-HTTPS is reached externally via Traefik + Pangolin
+            # (doh.valdeze.ch, see labels below) -- NOT published on the
+            # host. Do not uncomment 443 here, it would collide with
+            # Traefik's own host-published 443.
           # - "443:443/tcp"
           # - "443:443/udp"
             # DNS-over-TLS
@@ -26,3 +29,29 @@ services:
             # DNSCrypt
           # - "5443:5443/tcp"
           # - "5443:5443/udp"
+        networks:
+            - default
+            - shared-services
+        labels:
+            - "traefik.enable=true"
+
+            # DNS-over-HTTPS, reached from anywhere via Pangolin -> Traefik.
+            # Traefik terminates the public TLS cert (certresolver=cloudflare)
+            # and re-encrypts to AdGuard Home's own DoH listener on :443,
+            # which only needs to hold *a* cert (self-signed is fine --
+            # insecureSkipVerify below), not a publicly-trusted one.
+            - "traefik.http.routers.adguardhome-doh.rule=Host(`doh.valdeze.ch`)"
+            - "traefik.http.routers.adguardhome-doh.entrypoints=websecure"
+            - "traefik.http.routers.adguardhome-doh.tls=true"
+            - "traefik.http.routers.adguardhome-doh.tls.certresolver=cloudflare"
+            - "traefik.http.routers.adguardhome-doh.service=adguardhome-doh"
+            - "traefik.http.services.adguardhome-doh.loadbalancer.server.port=443"
+            - "traefik.http.services.adguardhome-doh.loadbalancer.server.scheme=https"
+            - "traefik.http.services.adguardhome-doh.loadbalancer.serverstransport=adguardhome-doh-insecure@docker"
+            - "traefik.http.serversTransports.adguardhome-doh-insecure.insecureSkipVerify=true"
+
+networks:
+    default: {}
+    shared-services:
+        external: true
+        name: shared-services
