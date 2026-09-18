@@ -75,15 +75,36 @@ host / in AdGuard Home's own config):
 
 1. Enable TLS/encryption in AdGuard Home (Settings -> Encryption
    settings, or `confdir/AdGuardHome.yaml`'s `tls:` block) with
-   `port_https: 443`, `server_name: doh.valdeze.ch`. The certificate here
-   can be self-signed — Traefik is what presents the real
+   `port_https: 443`, `server_name: doh.valdeze.ch`. The cert/key here
+   can be self-signed (Traefik is what presents the real
    publicly-trusted cert to clients; this is just the internal
-   Traefik<->AdGuard Home hop.
-2. Add a Pangolin resource (HTTP type) for `doh.valdeze.ch` targeting the
+   Traefik<->AdGuard Home hop) -- generate one and drop it in
+   `confdir/`, e.g.:
+   ```
+   openssl req -x509 -newkey rsa:2048 -nodes \
+     -keyout confdir/doh-selfsigned.key \
+     -out confdir/doh-selfsigned.crt \
+     -days 825 -subj "/CN=doh.valdeze.ch"
+   ```
+   then in the GUI's Encryption settings, set the certificate/private
+   key **paths** (not pasted contents) to the container-side paths:
+   `/opt/adguardhome/conf/doh-selfsigned.crt` and
+   `/opt/adguardhome/conf/doh-selfsigned.key`.
+2. **Important:** AdGuard Home's `port_https` (443) serves both the
+   admin web UI at `/` *and* DoH at `/dns-query` on the same listener --
+   there's no way to split them in AdGuard Home itself. The Traefik
+   router above is deliberately scoped to
+   `Host(\`doh.valdeze.ch\`) && PathPrefix(\`/dns-query\`)` so only DoH
+   queries are reachable externally -- anything else on that hostname
+   (including the admin login page) gets no matching router and 404s.
+   Don't widen that rule to a bare `Host()` match without adding an
+   equivalent restriction some other way, or the admin panel becomes
+   reachable from the internet via Pangolin.
+3. Add a Pangolin resource (HTTP type) for `doh.valdeze.ch` targeting the
    Traefik container on port 443 (the same way other
    `*.external.valdeze.ch` services with active Traefik labels are
    exposed through Pangolin) — not this container directly.
-3. DNS-over-TLS (port 853) has **no equivalent path** here — Pangolin's
+4. DNS-over-TLS (port 853) has **no equivalent path** here — Pangolin's
    available resource types (HTTP, AI Gateway, SSH, RDP, VNC, as of Sept
    2026) don't include a raw TCP/UDP passthrough, and DoT isn't HTTP, so
    it can't ride the same tunnel as DoH. Unconfirmed whether a newer
