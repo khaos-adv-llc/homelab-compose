@@ -84,8 +84,12 @@ host / in AdGuard Home's own config):
    openssl req -x509 -newkey rsa:2048 -nodes \
      -keyout confdir/doh-selfsigned.key \
      -out confdir/doh-selfsigned.crt \
-     -days 825 -subj "/CN=doh.valdeze.ch"
+     -days 825 -subj "/CN=doh.valdeze.ch" \
+     -addext "subjectAltName=DNS:doh.valdeze.ch"
    ```
+   (the `-addext` SAN is required -- a CN-only cert fails AdGuard Home's
+   own cert-pair validation on modern Go/OpenSSL, since Go's TLS stack
+   ignores the legacy CN field entirely. Needs OpenSSL 1.1.1+.)
    then in the GUI's Encryption settings, set the certificate/private
    key **paths** (not pasted contents) to the container-side paths:
    `/opt/adguardhome/conf/doh-selfsigned.crt` and
