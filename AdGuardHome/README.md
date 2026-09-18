@@ -79,6 +79,18 @@ resolver over DoH without any port-forwarding, tunneled the same way
 To finish setting this up (steps outside this repo, done directly on the
 host / in AdGuard Home's own config):
 
+0. Traefik needs `serversTransport: { insecureSkipVerify: true }` added
+   as a **top-level** key in `config/traefik.yml` (sibling of
+   `entryPoints`/`providers`/`certificatesResolvers`, not nested under
+   any of them) -- this is what lets Traefik re-encrypt to AdGuard
+   Home's self-signed DoH cert without failing validation. A
+   per-container `traefik.http.serversTransports.*` label was tried
+   first and didn't register correctly in this Traefik instance for
+   reasons not fully diagnosed, so this global static-config default is
+   used instead. Note this is a **global** default -- it applies to any
+   future Traefik service with an HTTPS-scheme backend, not just this
+   one, until something more scoped replaces it. Restart Traefik after
+   adding it.
 1. Enable TLS/encryption in AdGuard Home (Settings -> Encryption
    settings, or `confdir/AdGuardHome.yaml`'s `tls:` block) with
    `port_https: 443`, `server_name: doh.valdeze.ch`. The cert/key here

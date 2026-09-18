@@ -40,7 +40,9 @@ services:
             # Traefik terminates the public TLS cert (certresolver=cloudflare)
             # and re-encrypts to AdGuard Home's own DoH listener on :443,
             # which only needs to hold *a* cert (self-signed is fine --
-            # insecureSkipVerify below), not a publicly-trusted one.
+            # Traefik's global serversTransport.insecureSkipVerify in
+            # config/traefik.yml skips backend cert validation), not a
+            # publicly-trusted one.
             - "traefik.http.routers.adguardhome-doh.rule=Host(`doh.valdeze.ch`) && PathPrefix(`/dns-query`)"
             - "traefik.http.routers.adguardhome-doh.entrypoints=websecure"
             - "traefik.http.routers.adguardhome-doh.tls=true"
@@ -48,8 +50,6 @@ services:
             - "traefik.http.routers.adguardhome-doh.service=adguardhome-doh"
             - "traefik.http.services.adguardhome-doh.loadbalancer.server.port=443"
             - "traefik.http.services.adguardhome-doh.loadbalancer.server.scheme=https"
-            - "traefik.http.services.adguardhome-doh.loadbalancer.serverstransport=adguardhome-doh-insecure@docker"
-            - "traefik.http.serversTransports.adguardhome-doh-insecure.insecureSkipVerify=true"
 
 networks:
     default: {}
