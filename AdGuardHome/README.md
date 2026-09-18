@@ -52,7 +52,13 @@ a single test box.
   published to the host here — it would collide with Traefik's own
   host-published 443 — reachability for this router is purely
   container-to-container over `shared-services`, which is also how
-  Pangolin/`newt` reaches Traefik itself for the external hop.
+  Pangolin/`newt` reaches Traefik itself for the external hop. The
+  `traefik.docker.network=shared-services` label is required here (same
+  pattern already used by Infisical and one ServarrSuite service) —
+  without it, Traefik's Docker provider defaults to its global
+  `proxy_net` preference, finds this container isn't on it, falls back
+  to "first available network" and can pick `adguardhome_default`
+  instead, which Traefik has no access to at all and can never route to.
 - Otherwise still on no other Docker networks — DNS (53) and the web UI
   (3000) are still reached by publishing ports directly, not via
   `proxy_net` or `MediaServer`.

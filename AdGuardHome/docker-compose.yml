@@ -34,6 +34,7 @@ services:
             - shared-services
         labels:
             - "traefik.enable=true"
+            - "traefik.docker.network=shared-services"
 
             # DNS-over-HTTPS, reached from anywhere via Pangolin -> Traefik.
             # Traefik terminates the public TLS cert (certresolver=cloudflare)
