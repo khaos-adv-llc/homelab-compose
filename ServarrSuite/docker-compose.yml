@@ -194,16 +194,19 @@ services:
     # them automatically - used here for containers that share gluetun's
     # network namespace (e.g. qbittorrent), whose own healthchecks can go stale
     # if the VPN blips. Talks to the Docker socket directly, no network needed.
+    # Talks to a scoped socket-proxy (see ../SocketProxy) over the network
+    # instead of the raw socket - needs a real network now instead of
+    # network_mode: none for that reason.
     deunhealth:
         image: qmcgaw/deunhealth
         container_name: deunhealth
-        network_mode: none
         environment:
             LOG_LEVEL: info
             HEALTH_SERVER_ADDRESS: 127.0.0.1:9999
+            DOCKER_HOST: tcp://deunhealth-socket-proxy:2375
             TZ: ${TZ}
-        volumes:
-            - /var/run/docker.sock:/var/run/docker.sock
+        networks:
+            - MediaServer
         restart: always
 
     # ===========================================================================
@@ -1008,7 +1011,6 @@ services:
             HOMEPAGE_ALLOWED_HOSTS: home.${INTERNAL_DOMAIN:-internal.valdeze.ch}
         volumes:
             - ./homepage/config:/app/config
-            - /var/run/docker.sock:/var/run/docker.sock:ro
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.homepage.rule=Host(`home.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"

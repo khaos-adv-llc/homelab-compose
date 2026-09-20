@@ -1,0 +1,98 @@
+services:
+    # Read-only Docker API access for services that only need to *observe*
+    # containers (list/status/info) - homepage's dashboard widget and newt's
+    # (Pangolin) container discovery. Neither of these needs to start, stop,
+    # exec into, or inspect images/volumes/secrets, so everything but the
+    # bare minimum is switched off, mirroring Traefik's own socket-proxy in
+    # ../Traefik/docker-compose.yml.
+    dashboard-socket-proxy:
+        image: lscr.io/linuxserver/socket-proxy:latest
+        container_name: dashboard-socket-proxy
+        restart: unless-stopped
+        environment:
+            CONTAINERS: "1"
+            INFO: "1"
+            EVENTS: "1"
+            VERSION: "1"
+            PING: "1"
+            SERVICES: "0"
+            TASKS: "0"
+            NETWORKS: "0"
+            AUTH: "0"
+            BUILD: "0"
+            COMMIT: "0"
+            CONFIGS: "0"
+            DISTRIBUTION: "0"
+            EXEC: "0"
+            IMAGES: "0"
+            NODES: "0"
+            PLUGINS: "0"
+            POST: "0"
+            SECRETS: "0"
+            SESSION: "0"
+            SWARM: "0"
+            SYSTEM: "0"
+            VOLUMES: "0"
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+        networks:
+            - MediaServer
+            - shared-services
+            - reactive_resume_network
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /run
+            - /tmp
+
+    # Slightly wider access for deunhealth, which needs to *restart*
+    # containers whose healthcheck has gone stale (see ServarrSuite) - but
+    # still nothing else: no exec, no images, no volumes, no secrets.
+    deunhealth-socket-proxy:
+        image: lscr.io/linuxserver/socket-proxy:latest
+        container_name: deunhealth-socket-proxy
+        restart: unless-stopped
+        environment:
+            CONTAINERS: "1"
+            POST: "1"
+            PING: "1"
+            INFO: "0"
+            EVENTS: "0"
+            VERSION: "0"
+            SERVICES: "0"
+            TASKS: "0"
+            NETWORKS: "0"
+            AUTH: "0"
+            BUILD: "0"
+            COMMIT: "0"
+            CONFIGS: "0"
+            DISTRIBUTION: "0"
+            EXEC: "0"
+            IMAGES: "0"
+            NODES: "0"
+            PLUGINS: "0"
+            SECRETS: "0"
+            SESSION: "0"
+            SWARM: "0"
+            SYSTEM: "0"
+            VOLUMES: "0"
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+        networks:
+            - MediaServer
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /run
+            - /tmp
+
+networks:
+    MediaServer:
+        external: true
+    shared-services:
+        external: true
+    reactive_resume_network:
+        external: true
+        name: reactive_resume_network
