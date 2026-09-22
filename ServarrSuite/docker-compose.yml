@@ -654,7 +654,7 @@ services:
         volumes:
             - ./musicseerr/config:/app/config
             - ./musicseerr/cache:/app/cache
-            - /home/tuckeraa/media:/music:ro
+            - /home/tuckeraa/media:/data/media/music:ro
         networks:
             - MediaServer
         restart: unless-stopped
