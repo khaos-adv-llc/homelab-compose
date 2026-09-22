@@ -639,7 +639,7 @@ services:
     # requests to Lidarr. Mounts the media library read-only since it only
     # needs to check what's already present.
     musicseerr:
-        image: ghcr.io/habirabbu/musicseerr:latest
+        image: ghcr.io/droppedneedle/droppedneedle:latest
         container_name: musicseerr
         environment:
             <<: *env_common
