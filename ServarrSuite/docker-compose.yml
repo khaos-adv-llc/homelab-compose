@@ -636,17 +636,20 @@ services:
 
     # --- musicseerr ------------------------------------------------
     # This is DroppedNeedle (image below) acting as the music request portal.
-    # It drives slskd directly over its HTTP API - no Lidarr involved. Mounted
-    # read-write (not read-only) because it needs to move finished slskd
-    # downloads (under downloads/slskd/complete, on this same host tree) into
-    # the library itself - see its own Download Client settings for the
-    # in-container path (/data/media/music/downloads/slskd/complete).
+    # It drives slskd directly over its HTTP API - no Lidarr involved. The
+    # library mount is read-write since it moves imported files into it.
+    # SLSKD_DOWNLOADS_PATH + the dedicated volume below point it at slskd's
+    # actual completed-downloads folder (slskd itself is configured, via its
+    # own remote-config UI, to write completed downloads to
+    # /data/media/downloads/slskd/complete - i.e. host
+    # /home/tuckeraa/media/downloads/slskd/complete).
     musicseerr:
         image: ghcr.io/droppedneedle/droppedneedle:latest
         container_name: musicseerr
         environment:
             <<: *env_common
             PORT: "8688"
+            SLSKD_DOWNLOADS_PATH: /data/downloads/slskd
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.musicseerr.rule=Host(`musicrequest.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
@@ -658,6 +661,7 @@ services:
             - ./musicseerr/config:/app/config
             - ./musicseerr/cache:/app/cache
             - /home/tuckeraa/media:/data/media/music
+            - /home/tuckeraa/media/downloads/slskd/complete:/data/downloads/slskd
         networks:
             - MediaServer
         restart: unless-stopped
