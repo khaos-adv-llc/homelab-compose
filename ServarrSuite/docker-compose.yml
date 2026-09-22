@@ -636,8 +636,11 @@ services:
 
     # --- musicseerr ------------------------------------------------
     # This is DroppedNeedle (image below) acting as the music request portal.
-    # It drives slskd directly over its HTTP API - no Lidarr involved. Mounts
-    # the media library read-only since it only needs to check what's present.
+    # It drives slskd directly over its HTTP API - no Lidarr involved. Mounted
+    # read-write (not read-only) because it needs to move finished slskd
+    # downloads (under downloads/slskd/complete, on this same host tree) into
+    # the library itself - see its own Download Client settings for the
+    # in-container path (/data/media/music/downloads/slskd/complete).
     musicseerr:
         image: ghcr.io/droppedneedle/droppedneedle:latest
         container_name: musicseerr
@@ -654,7 +657,7 @@ services:
         volumes:
             - ./musicseerr/config:/app/config
             - ./musicseerr/cache:/app/cache
-            - /home/tuckeraa/media:/data/media/music:ro
+            - /home/tuckeraa/media:/data/media/music
         networks:
             - MediaServer
         restart: unless-stopped
