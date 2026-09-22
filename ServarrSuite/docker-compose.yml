@@ -351,29 +351,29 @@ services:
             - /home/tuckeraa/media:/data/media
         restart: unless-stopped
 
-    # --- soularr ---------------------------------------------------
+    # --- soularr (DISABLED) ------------------------------------------
     # Bridges Lidarr wanted/missing albums to slskd searches, automating
     # Soulseek-based music downloads. Depends on slskd being enabled.
-    soularr:
-        image: mrusse08/soularr:latest
-        container_name: soularr
-        user: ${PUID}:${PGID}
-        environment:
-            <<: *env_common
-            SCRIPT_INTERVAL: 300
-        volumes:
-            - ./soularr:/data
-            - /home/tuckeraa/media:/data/media
-        networks:
-            - MediaServer
-        labels:
-            - "traefik.enable=true"
-            - "traefik.http.routers.soularr.rule=Host(`soularr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
-            - "traefik.http.routers.soularr.entrypoints=websecure"
-            - "traefik.http.routers.soularr.tls=true"
-            - "traefik.http.routers.soularr.tls.certresolver=cloudflare"
-            - "traefik.http.services.soularr.loadbalancer.server.port=8265"
-        restart: unless-stopped
+#    soularr:
+#        image: mrusse08/soularr:latest
+#        container_name: soularr
+#        user: ${PUID}:${PGID}
+#        environment:
+#            <<: *env_common
+#            SCRIPT_INTERVAL: 300
+#        volumes:
+#            - ./soularr:/data
+#            - /home/tuckeraa/media:/data/media
+#        networks:
+#            - MediaServer
+#        labels:
+#            - "traefik.enable=true"
+#            - "traefik.http.routers.soularr.rule=Host(`soularr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.soularr.entrypoints=websecure"
+#            - "traefik.http.routers.soularr.tls=true"
+#            - "traefik.http.routers.soularr.tls.certresolver=cloudflare"
+#            - "traefik.http.services.soularr.loadbalancer.server.port=8265"
+#        restart: unless-stopped
 
     # ===========================================================================
     # 3. INDEXERS & SEARCH
@@ -476,27 +476,27 @@ services:
             - MediaServer
         restart: unless-stopped
 
-    # --- lidarr ---------------------------------------------------
+    # --- lidarr (DISABLED) -------------------------------------------
     # Same idea as Sonarr/Radarr, but for music albums.
-    lidarr:
-        image: lscr.io/linuxserver/lidarr:latest
-        container_name: lidarr
-        environment:
-            <<: *env_common
-        volumes:
-            - /etc/localtime:/etc/localtime:ro
-            - ./lidarr:/config
-            - /home/tuckeraa/media:/data/media
-        labels:
-            - "traefik.enable=true"
-            - "traefik.http.routers.lidarr.rule=Host(`lidarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
-            - "traefik.http.routers.lidarr.entrypoints=websecure"
-            - "traefik.http.routers.lidarr.tls=true"
-            - "traefik.http.routers.lidarr.tls.certresolver=cloudflare"
-            - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
-        networks:
-            - MediaServer
-        restart: unless-stopped
+#    lidarr:
+#        image: lscr.io/linuxserver/lidarr:latest
+#        container_name: lidarr
+#        environment:
+#            <<: *env_common
+#        volumes:
+#            - /etc/localtime:/etc/localtime:ro
+#            - ./lidarr:/config
+#            - /home/tuckeraa/media:/data/media
+#        labels:
+#            - "traefik.enable=true"
+#            - "traefik.http.routers.lidarr.rule=Host(`lidarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.lidarr.entrypoints=websecure"
+#            - "traefik.http.routers.lidarr.tls=true"
+#            - "traefik.http.routers.lidarr.tls.certresolver=cloudflare"
+#            - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+#        networks:
+#            - MediaServer
+#        restart: unless-stopped
 
     # --- bazarr ------------------------------------------------------------------
     # Subtitle manager - watches Sonarr/Radarr's libraries and automatically
@@ -635,9 +635,9 @@ services:
         restart: unless-stopped
 
     # --- musicseerr ------------------------------------------------
-    # Overseerr-equivalent request portal for music, forwarding approved
-    # requests to Lidarr. Mounts the media library read-only since it only
-    # needs to check what's already present.
+    # This is DroppedNeedle (image below) acting as the music request portal.
+    # It drives slskd directly over its HTTP API - no Lidarr involved. Mounts
+    # the media library read-only since it only needs to check what's present.
     musicseerr:
         image: ghcr.io/droppedneedle/droppedneedle:latest
         container_name: musicseerr
