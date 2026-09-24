@@ -1,0 +1,14 @@
+# systemd timer -- runs weekly-full-upgrade.service every Sunday at 03:00,
+# independent of unattended-upgrades' own daily security-only schedule.
+# Install alongside the .service file, then:
+#   systemctl daemon-reload && systemctl enable --now weekly-full-upgrade.timer
+[Unit]
+Description=Weekly full apt upgrade, Sundays 03:00
+
+[Timer]
+OnCalendar=Sun 03:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

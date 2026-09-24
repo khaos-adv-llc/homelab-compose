@@ -1,0 +1,10 @@
+# systemd unit -- runs weekly-full-upgrade.sh once. Install to
+# /etc/systemd/system/weekly-full-upgrade.service on the homelab host.
+[Unit]
+Description=Weekly full apt upgrade with ntfy notification
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/weekly-full-upgrade.sh

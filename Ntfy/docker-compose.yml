@@ -1,0 +1,47 @@
+services:
+    ntfy:
+        image: binwiederhier/ntfy:latest
+        container_name: ntfy
+        command:
+            - serve
+        restart: unless-stopped
+        environment:
+            TZ: "Europe/Zurich"
+            NTFY_BASE_URL: "https://ntfy.internal.valdeze.ch"
+            NTFY_BEHIND_PROXY: "true"
+            NTFY_AUTH_FILE: "/var/lib/ntfy/auth.db"
+            NTFY_AUTH_DEFAULT_ACCESS: "deny-all"
+            NTFY_ENABLE_SIGNUP: "false"
+        volumes:
+            - ntfy-cache:/var/cache/ntfy
+            - ntfy-data:/var/lib/ntfy
+        networks:
+            - default
+            - proxy_net
+        healthcheck:
+            test: ["CMD-SHELL", "wget -q --tries=1 http://localhost/v1/health -O - | grep -Eq '\"healthy\"\\s*:\\s*true' || exit 1"]
+            interval: 60s
+            timeout: 10s
+            retries: 3
+
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=proxy_net"
+            - "traefik.http.routers.ntfy.rule=Host(`ntfy.internal.valdeze.ch`)"
+            - "traefik.http.routers.ntfy.entrypoints=websecure"
+            - "traefik.http.routers.ntfy.tls=true"
+            - "traefik.http.routers.ntfy.tls.certresolver=cloudflare"
+            - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+            # Deliberately NOT behind the Authentik forward-auth chain: ntfy
+            # has its own user/token auth (NTFY_AUTH_DEFAULT_ACCESS=deny-all
+            # above), and the ntfy phone/desktop apps plus the weekly-upgrade
+            # script both need to hit the API directly without an OIDC
+            # redirect in the way.
+
+volumes:
+    ntfy-cache:
+    ntfy-data:
+
+networks:
+    proxy_net:
+        external: true
