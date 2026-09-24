@@ -31,9 +31,9 @@ entryPoints:
       tls:
         certResolver: cloudflare
         domains:
-          - main: "internal.valdeze.ch"
+          - main: "valdeze.ch"
             sans:
-              - "*.internal.valdeze.ch"
+              - "*.valdeze.ch"
 
 providers:
   docker:

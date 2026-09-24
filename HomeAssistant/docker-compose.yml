@@ -26,7 +26,7 @@ services:
         
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.homeassistant.rule=Host(`ha.internal.valdeze.ch`)"
+            - "traefik.http.routers.homeassistant.rule=Host(`ha.valdeze.ch`)"
             - "traefik.http.routers.homeassistant.entrypoints=websecure"
             - "traefik.http.routers.homeassistant.tls=true"
             - "traefik.http.routers.homeassistant.tls.certresolver=cloudflare"
@@ -90,7 +90,7 @@ services:
         
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.scrypted.rule=Host(`scrypted.internal.valdeze.ch`)"
+            - "traefik.http.routers.scrypted.rule=Host(`scrypted.valdeze.ch`)"
             - "traefik.http.routers.scrypted.entrypoints=websecure"
             - "traefik.http.routers.scrypted.tls=true"
             - "traefik.http.routers.scrypted.tls.certresolver=cloudflare"
@@ -112,7 +112,7 @@ services:
             - LOG_LEVEL=info
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.musicassistant.rule=Host(`music.internal.valdeze.ch`)"
+            - "traefik.http.routers.musicassistant.rule=Host(`music.valdeze.ch`)"
             - "traefik.http.routers.musicassistant.entrypoints=websecure"
             - "traefik.http.routers.musicassistant.tls=true"
             - "traefik.http.routers.musicassistant.tls.certresolver=cloudflare"

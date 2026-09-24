@@ -22,7 +22,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=shared-services"
-      - "traefik.http.routers.infisical.rule=Host(`infisical.internal.valdeze.ch`)"
+      - "traefik.http.routers.infisical.rule=Host(`infisical.valdeze.ch`)"
       - "traefik.http.routers.infisical.entrypoints=websecure"
       - "traefik.http.routers.infisical.tls.certresolver=cloudflare"
       - "traefik.http.services.infisical.loadbalancer.server.port=8080"

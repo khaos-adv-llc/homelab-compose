@@ -21,9 +21,9 @@
 # used to live. Every service has a short comment block above it explaining
 # what it does and any option worth knowing about.
 #
-# Every Traefik Host() rule uses INTERNAL_DOMAIN (set in .env, e.g.
-# "internal.valdeze.ch"), so the whole stack's internal domain can be
-# changed in one place. Falls back to internal.valdeze.ch if unset.
+# Every Traefik Host() rule uses DOMAIN (set in .env, e.g.
+# "valdeze.ch"), so the whole stack's domain can be changed in one
+# place. Falls back to valdeze.ch if unset.
 #
 # Networking model:
 #      - "MediaServer" is the internal network almost everything lives on.
@@ -135,7 +135,7 @@ services:
         # instead of on the qbittorrent service block itself.
 #        labels:
 #            - "traefik.enable=true"
-#            - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${DOMAIN:-valdeze.ch}`)"
 #            - "traefik.http.routers.qbittorrent.entrypoints=websecure"
 #            - "traefik.http.routers.qbittorrent.tls=true"
 #            - "traefik.http.routers.qbittorrent.tls.certresolver=cloudflare"
@@ -260,7 +260,7 @@ services:
             - ./cache/sabnzbd-incomplete:/incomplete-downloads
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.sabnzbd.rule=Host(`sabnzbd.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.sabnzbd.rule=Host(`sabnzbd.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.sabnzbd.entrypoints=websecure"
             - "traefik.http.routers.sabnzbd.tls=true"
             - "traefik.http.routers.sabnzbd.tls.certresolver=cloudflare"
@@ -290,7 +290,7 @@ services:
             - ./cache/nzbget-incomplete:/incomplete-downloads
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.nzbget.rule=Host(`nzbget.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.nzbget.rule=Host(`nzbget.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.nzbget.entrypoints=websecure"
             - "traefik.http.routers.nzbget.tls=true"
             - "traefik.http.routers.nzbget.tls.certresolver=cloudflare"
@@ -321,7 +321,7 @@ services:
             - ./cache/nzbget2-incomplete:/incomplete-downloads
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.nzbget2.rule=Host(`nzbget2.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.nzbget2.rule=Host(`nzbget2.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.nzbget2.entrypoints=websecure"
             - "traefik.http.routers.nzbget2.tls=true"
             - "traefik.http.routers.nzbget2.tls.certresolver=cloudflare"
@@ -368,7 +368,7 @@ services:
 #            - MediaServer
 #        labels:
 #            - "traefik.enable=true"
-#            - "traefik.http.routers.soularr.rule=Host(`soularr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.soularr.rule=Host(`soularr.${DOMAIN:-valdeze.ch}`)"
 #            - "traefik.http.routers.soularr.entrypoints=websecure"
 #            - "traefik.http.routers.soularr.tls=true"
 #            - "traefik.http.routers.soularr.tls.certresolver=cloudflare"
@@ -392,7 +392,7 @@ services:
             - ./prowlarr:/config
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.prowlarr.entrypoints=websecure"
             - "traefik.http.routers.prowlarr.tls=true"
             - "traefik.http.routers.prowlarr.tls.certresolver=cloudflare"
@@ -445,7 +445,7 @@ services:
             - /home/tuckeraa/media:/data/media
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.sonarr.rule=Host(`sonarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.sonarr.entrypoints=websecure"
             - "traefik.http.routers.sonarr.tls=true"
             - "traefik.http.routers.sonarr.tls.certresolver=cloudflare"
@@ -467,7 +467,7 @@ services:
             - /home/tuckeraa/media:/data/media
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.radarr.rule=Host(`radarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.radarr.rule=Host(`radarr.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.radarr.entrypoints=websecure"
             - "traefik.http.routers.radarr.tls=true"
             - "traefik.http.routers.radarr.tls.certresolver=cloudflare"
@@ -489,7 +489,7 @@ services:
 #            - /home/tuckeraa/media:/data/media
 #        labels:
 #            - "traefik.enable=true"
-#            - "traefik.http.routers.lidarr.rule=Host(`lidarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.lidarr.rule=Host(`lidarr.${DOMAIN:-valdeze.ch}`)"
 #            - "traefik.http.routers.lidarr.entrypoints=websecure"
 #            - "traefik.http.routers.lidarr.tls=true"
 #            - "traefik.http.routers.lidarr.tls.certresolver=cloudflare"
@@ -512,7 +512,7 @@ services:
             - /home/tuckeraa/media:/data/media
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.bazarr.rule=Host(`bazarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.bazarr.entrypoints=websecure"
             - "traefik.http.routers.bazarr.tls=true"
             - "traefik.http.routers.bazarr.tls.certresolver=cloudflare"
@@ -541,7 +541,7 @@ services:
         volumes:
             - ./profilarr-v2:/config
         environment:
-            ORIGIN: "https://profilarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}"
+            ORIGIN: "https://profilarr.${DOMAIN:-valdeze.ch}"
             AUTH: oidc
             OIDC_DISCOVERY_URL: ${PROFILARR_V2_OIDC_URL}
             OIDC_CLIENT_ID: ${PROFILARR_V2_OIDC_ID}
@@ -550,7 +550,7 @@ services:
             - MediaServer
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.profilarr-v2.rule=Host(`profilarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.profilarr-v2.rule=Host(`profilarr.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.profilarr-v2.entrypoints=websecure"
             - "traefik.http.routers.profilarr-v2.tls=true"
             - "traefik.http.routers.profilarr-v2.tls.certresolver=cloudflare"
@@ -571,7 +571,7 @@ services:
 #            - ./cleanuparr:/config
 #        labels:
 #            - "traefik.enable=true"
-#            - "traefik.http.routers.cleanuparr.rule=Host(`cleanuparr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+#            - "traefik.http.routers.cleanuparr.rule=Host(`cleanuparr.${DOMAIN:-valdeze.ch}`)"
 #            - "traefik.http.routers.cleanuparr.entrypoints=websecure"
 #            - "traefik.http.routers.cleanuparr.tls=true"
 #            - "traefik.http.routers.cleanuparr.tls.certresolver=cloudflare"
@@ -604,7 +604,7 @@ services:
             SUGGESTARR_PORT: ${SUGGESTARR_PORT:-5000}
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.suggestarr.entrypoints=websecure"
             - "traefik.http.routers.suggestarr.tls=true"
             - "traefik.http.routers.suggestarr.tls.certresolver=cloudflare"
@@ -625,7 +625,7 @@ services:
             - ./overseerr:/app/config
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.overseerr.rule=Host(`request.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.overseerr.rule=Host(`request.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.overseerr.entrypoints=websecure"
             - "traefik.http.routers.overseerr.tls=true"
             - "traefik.http.routers.overseerr.tls.certresolver=cloudflare"
@@ -643,6 +643,13 @@ services:
     # own remote-config UI, to write completed downloads to
     # /data/media/downloads/slskd/complete - i.e. host
     # /home/tuckeraa/media/downloads/slskd/complete).
+    #
+    # NOTE (Pangolin migration): this used to also have a separate
+    # Pangolin resource (musicrequest.valdeze.ch) for Spotify OAuth
+    # redirects, in addition to this Traefik route. That external
+    # resource has been dropped -- internal-only via Traefik now.
+    # Spotify OAuth login for this app will need the VPN (split-
+    # tunneled *.valdeze.ch) to complete the redirect.
     musicseerr:
         image: ghcr.io/droppedneedle/droppedneedle:latest
         container_name: musicseerr
@@ -652,7 +659,7 @@ services:
             SLSKD_DOWNLOADS_PATH: /data/downloads/slskd
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.musicseerr.rule=Host(`musicrequest.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.musicseerr.rule=Host(`musicrequest.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.musicseerr.entrypoints=websecure"
             - "traefik.http.routers.musicseerr.tls=true"
             - "traefik.http.routers.musicseerr.tls.certresolver=cloudflare"
@@ -674,8 +681,8 @@ services:
     # Media server / playback frontend for the whole library, with NVIDIA GPU
     # transcoding enabled. Two Traefik routers share one upstream service so
     # the same container can serve two "sites":
-    #      - `media.${INTERNAL_DOMAIN:-internal.valdeze.ch}`            -> normal access, no extra headers.
-    #      - `guestmedia.${INTERNAL_DOMAIN:-internal.valdeze.ch}` -> guest access; the
+    #      - `media.${DOMAIN:-valdeze.ch}`            -> normal access, no extra headers.
+    #      - `guestmedia.${DOMAIN:-valdeze.ch}` -> guest access; the
     #          `jellyfin-guest-auth` middleware injects an
     #          `X-Forwarded-User: Guest` header on every request, which must match
     #          Jellyfin's Header Auth plugin configuration exactly to work.
@@ -733,14 +740,14 @@ services:
             - "traefik.http.services.jellyfin-svc.loadbalancer.server.port=8096"
 
             # Normal site: no identity header injected
-            - "traefik.http.routers.jellyfin.rule=Host(`media.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.jellyfin.rule=Host(`media.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.jellyfin.entrypoints=websecure"
             - "traefik.http.routers.jellyfin.tls=true"
             - "traefik.http.routers.jellyfin.tls.certresolver=cloudflare"
             - "traefik.http.routers.jellyfin.service=jellyfin-svc"
 
             # Guest site: inject identity header on every upstream request
-            - "traefik.http.routers.jellyfin-guest.rule=Host(`guestmedia.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.jellyfin-guest.rule=Host(`guestmedia.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.jellyfin-guest.entrypoints=websecure"
             - "traefik.http.routers.jellyfin-guest.tls=true"
             - "traefik.http.routers.jellyfin-guest.tls.certresolver=cloudflare"
@@ -770,7 +777,7 @@ services:
         user: ${PUID}:${PGID}
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.navidrome.rule=Host(`navidrome.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.navidrome.rule=Host(`navidrome.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.navidrome.entrypoints=websecure"
             - "traefik.http.routers.navidrome.tls=true"
             - "traefik.http.routers.navidrome.tls.certresolver=cloudflare"
@@ -802,7 +809,7 @@ services:
             - /home/tuckeraa/media:/storage:rw
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.picard.rule=Host(`picard.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.picard.rule=Host(`picard.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.picard.entrypoints=websecure"
             - "traefik.http.routers.picard.tls=true"
             - "traefik.http.routers.picard.tls.certresolver=cloudflare"
@@ -853,7 +860,7 @@ services:
             - jellystat-db
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.jellystat.rule=Host(`stats.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.jellystat.rule=Host(`stats.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.jellystat.entrypoints=websecure"
             - "traefik.http.routers.jellystat.tls=true"
             - "traefik.http.routers.jellystat.tls.certresolver=cloudflare"
@@ -884,7 +891,7 @@ services:
             - MediaServer
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.dispatcharr.rule=Host(`dispatcharr.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.dispatcharr.rule=Host(`dispatcharr.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.dispatcharr.entrypoints=websecure"
             - "traefik.http.routers.dispatcharr.tls=true"
             - "traefik.http.routers.dispatcharr.tls.certresolver=cloudflare"
@@ -942,7 +949,7 @@ services:
             - /home/tuckeraa/media:/data/media:shared
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.rclone-webgui.rule=Host(`rclone.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.rclone-webgui.rule=Host(`rclone.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.rclone-webgui.entrypoints=websecure"
             - "traefik.http.routers.rclone-webgui.tls=true"
             - "traefik.http.routers.rclone-webgui.tls.certresolver=cloudflare"
@@ -979,7 +986,7 @@ services:
             APPLICATION_URL: ""
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.filestash.rule=Host(`filestash.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.filestash.rule=Host(`filestash.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.filestash.entrypoints=websecure"
             - "traefik.http.routers.filestash.tls=true"
             - "traefik.http.routers.filestash.tls.certresolver=cloudflare"
@@ -1005,7 +1012,7 @@ services:
     # Key options:
     #      HOMEPAGE_ALLOWED_HOSTS - must include whatever hostname you reach it on
     #                                                        (Homepage rejects requests with an unrecognized
-    #                                                        Host header), kept in sync with INTERNAL_DOMAIN.
+    #                                                        Host header), kept in sync with DOMAIN.
     #      docker.sock mount              - read-only, lets Homepage auto-discover
     #                                                        containers and their labels for status/widgets;
     #                                                        omit it if you'd rather configure everything by
@@ -1015,12 +1022,12 @@ services:
         container_name: homepage
         environment:
             <<: *env_common
-            HOMEPAGE_ALLOWED_HOSTS: home.${INTERNAL_DOMAIN:-internal.valdeze.ch}
+            HOMEPAGE_ALLOWED_HOSTS: home.${DOMAIN:-valdeze.ch}
         volumes:
             - ./homepage/config:/app/config
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.homepage.rule=Host(`home.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.homepage.rule=Host(`home.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.homepage.entrypoints=websecure"
             - "traefik.http.routers.homepage.tls=true"
             - "traefik.http.routers.homepage.tls.certresolver=cloudflare"

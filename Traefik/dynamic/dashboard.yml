@@ -4,7 +4,7 @@ http:
     # disabled, in case the stock Traefik dashboard is ever needed again.
     # traefik-dashboard:
     #   rule: >-
-    #     Host(`traefik.internal.valdeze.ch`) &&
+    #     Host(`traefik.valdeze.ch`) &&
     #     (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
     #   entryPoints:
     #     - websecure
@@ -17,7 +17,7 @@ http:
     #   tls: {}
 
     traefik-log-dashboard:
-      rule: "Host(`traefik.internal.valdeze.ch`)"
+      rule: "Host(`traefik.valdeze.ch`)"
       entryPoints:
         - websecure
       service: traefik-log-dashboard-service
@@ -30,7 +30,7 @@ http:
 
     authentik-outpost:
       rule: >-
-        Host(`traefik.internal.valdeze.ch`) &&
+        Host(`traefik.valdeze.ch`) &&
         PathPrefix(`/outpost.goauthentik.io/`)
       entryPoints:
         - websecure

@@ -34,7 +34,7 @@ services:
         # No traefik.* labels: this service is routed via Traefik's dynamic
         # file provider instead (see Traefik/dynamic/dashboard.yml), which
         # replaced the stock api@internal dashboard router with this one at
-        # the same traefik.internal.valdeze.ch hostname, behind the same
+        # the same traefik.valdeze.ch hostname, behind the same
         # LAN-allowlist + Authentik forward-auth + rate-limit +
         # security-headers middleware chain.
 

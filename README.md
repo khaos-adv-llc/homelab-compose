@@ -133,19 +133,31 @@ passwords and tokens as plain environment variables sourced from `.env`.
 Migrating every stack to Docker secrets is a real, tracked backlog item,
 not something to assume is already done.
 
-**The `appname.${INTERNAL_DOMAIN}` / `appname.external.valdeze.ch` split,
-and Authentik OIDC by default.** Every service that needs a hostname picks
-one of two shapes: `appname.internal.valdeze.ch` for anything that should
-only ever be reachable from inside the house, or `appname.external.valdeze.ch`
-for anything meant to be reachable from anywhere, routed out through
-Pangolin (`newt`, in `EdgeGateway/`). Splitting on hostname rather than on
-network makes the intent visible in the URL itself — no one has to go
-check a compose file to know whether a service is supposed to be reachable
-from a coffee shop. For anything exposed via the `external` hostname,
-authentication should default to OIDC (OpenID Connect — a standard way for
-an app to delegate "who is this user" to a separate identity provider
-instead of implementing its own login system) against Authentik at
-`auth.valdeze.ch`, rather than a one-off username/password scheme per app.
+**Single `appname.${DOMAIN}` (`valdeze.ch`) hostname, minimal Pangolin,
+and Authentik OIDC by default (updated during the Sept 2026 Pangolin
+migration).** This repo used to split every hostname into two shapes --
+`appname.internal.valdeze.ch` for LAN-only, `appname.external.valdeze.ch`
+for anything routed out through Pangolin (`newt`, in `EdgeGateway/`). That
+split is gone. Almost every service now answers on one hostname,
+`appname.valdeze.ch`, served by Traefik -- reachable directly on the LAN,
+and reachable remotely through the UniFi client VPN, which is configured
+to split-tunnel `*.valdeze.ch` straight to the internal network. Pangolin
+is no longer the default exposure path; it's now the exception, kept only
+for the handful of services that genuinely need to work without the VPN:
+**Authentik** (`auth.valdeze.ch` -- has to be reachable to complete OIDC
+logins from anywhere), **Mealie** (`meals.valdeze.ch` -- shared with people
+outside the house), **YTzero** (`yt.valdeze.ch`), and the
+**FluxerDiscordBridge panel** (`fluxerbridge.valdeze.ch` -- other Discord/
+Fluxer community members and OAuth redirect callbacks need it, not just
+Tucker). Any other service found still holding a Pangolin resource in
+Pangolin's own dashboard should have that resource deleted -- this repo
+can only change compose files, not Pangolin's dashboard config, so that
+cleanup has to happen there by hand. For anything still exposed via
+Pangolin, authentication should default to OIDC (OpenID Connect -- a
+standard way for an app to delegate "who is this user" to a separate
+identity provider instead of implementing its own login system) against
+Authentik at `auth.valdeze.ch`, rather than a one-off username/password
+scheme per app.
 Apps that can't speak OIDC natively fall back to Authentik's forward-auth
 outpost (`authentik-outpost`, living in `Traefik/`) or its LDAP outpost
 (`AuthentikOutpost/`). `auth.valdeze.ch` is the *only* URL for Authentik —
@@ -217,7 +229,7 @@ own deployment before it exists. The order that resolves it:
 2. **Create the secrets-management project.** In Infisical, create one
    project with one folder per stack, using the exact folder names this
    repo uses (matching the real on-host directory names) — plus, if you
-   want to avoid repeating `PUID`/`PGID`/`TZ`/`INTERNAL_DOMAIN` in every
+   want to avoid repeating `PUID`/`PGID`/`TZ`/`DOMAIN` in every
    stack's folder, set those as Arcane's own global Variables instead
    (Arcane resolves compose variables from global Variables, then the
    project's own `.env`, then compose defaults).
@@ -293,7 +305,7 @@ directly before building on top of any of them:
   file in this repo as of this writing. Nothing here auto-updates itself;
   don't assume any service will pick up a new image on its own.
 - **`ha.khaosadv.com`** — this domain doesn't appear in Home Assistant's
-  compose file (which routes `ha.internal.valdeze.ch` via Traefik instead).
+  compose file (which routes `ha.valdeze.ch` via Traefik instead).
   Whether it's still a live external entry point (e.g. DDNS/port-forward),
   retired, or a mix-up in older notes isn't confirmed.
 - **Mealie's Traefik reachability — resolved.** Its `traefik.*` labels are
@@ -308,13 +320,15 @@ directly before building on top of any of them:
   (routed some other way, e.g. Traefik's `./dynamic` file provider) or an
   oversight isn't confirmed — don't assume it's actually reachable through
   Traefik today.
-- **Pangolin vs. Cloudflare Tunnel** — current understanding is that
-  Pangolin (`newt`, in `EdgeGateway/`) is the primary path for
-  `*.external.valdeze.ch` services, and the standalone Cloudflare Tunnel in
-  `Cloudflared/` is a deliberate standby/fallback kept running in case
-  Pangolin has trouble with a particular service — not a competing or
-  partially-used primary route. Treat this as the current understanding,
-  not an eternal fact, if it comes up again later.
+- **Pangolin vs. Cloudflare Tunnel — resolved.** The standalone
+  Cloudflare Tunnel in `Cloudflared/` was never carrying live traffic and
+  is now decommissioned (Sept 2026) -- Tucker confirmed he doesn't want
+  media streamed over Cloudflare's free tier. Its compose service is
+  commented out in this repo; the running container on the media server
+  still needs to be stopped by hand. Pangolin (`newt`, in `EdgeGateway/`)
+  is now the sole external-exposure mechanism, and only for the minimal
+  exception list above (Authentik, Mealie, YTzero, FluxerDiscordBridge
+  panel) -- not the default path for anything else.
 
 ## Why is Duplicati inside `ServarrSuite/`?
 

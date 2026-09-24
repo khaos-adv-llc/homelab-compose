@@ -4,6 +4,6 @@ tls:
       defaultGeneratedCert:
         resolver: cloudflare
         domain:
-          main: internal.valdeze.ch
+          main: valdeze.ch
           sans:
-            - "*.internal.valdeze.ch"
+            - "*.valdeze.ch"

@@ -7,7 +7,7 @@ services:
         restart: unless-stopped
         environment:
             TZ: "Europe/Zurich"
-            NTFY_BASE_URL: "https://ntfy.internal.valdeze.ch"
+            NTFY_BASE_URL: "https://ntfy.valdeze.ch"
             NTFY_BEHIND_PROXY: "true"
             NTFY_AUTH_FILE: "/var/lib/ntfy/auth.db"
             NTFY_AUTH_DEFAULT_ACCESS: "deny-all"
@@ -36,7 +36,7 @@ services:
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=proxy_net"
-            - "traefik.http.routers.ntfy.rule=Host(`ntfy.internal.valdeze.ch`)"
+            - "traefik.http.routers.ntfy.rule=Host(`ntfy.valdeze.ch`)"
             - "traefik.http.routers.ntfy.entrypoints=websecure"
             - "traefik.http.routers.ntfy.tls=true"
             - "traefik.http.routers.ntfy.tls.certresolver=cloudflare"

@@ -27,7 +27,7 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/docker}"         # where Arcane's PROJECTS_DIRECTORY points
-INFISICAL_DOMAIN="https://infisical.internal.valdeze.ch/api"  # self-hosted, not cloud SaaS
+INFISICAL_DOMAIN="https://infisical.valdeze.ch/api"  # self-hosted, not cloud SaaS
 INFISICAL_PROJECT_ID="f067eba8-f3b1-4cd5-89c8-6425e81ca3b6"    # "Homelab" Secrets Management project
 INFISICAL_ENV="prod"                      # single environment is enough for a homelab
 INFISICAL_CLIENT_ID="cf4fd700-c720-4d2b-865b-e60f84f10122"    # render-env-host machine identity

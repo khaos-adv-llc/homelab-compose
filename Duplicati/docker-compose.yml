@@ -79,7 +79,7 @@ services:
             - /docker/TraefikLogDashboard:/source/TraefikLogDashboard:ro
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.duplicati.rule=Host(`duplicati.${INTERNAL_DOMAIN:-internal.valdeze.ch}`)"
+            - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN:-valdeze.ch}`)"
             - "traefik.http.routers.duplicati.entrypoints=websecure"
             - "traefik.http.routers.duplicati.tls=true"
             - "traefik.http.routers.duplicati.tls.certresolver=cloudflare"

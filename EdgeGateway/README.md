@@ -5,10 +5,19 @@ This stack runs `newt` (`fosrl/newt`), the client half of
 tunnel/access system. `newt` connects outbound to a Pangolin server
 (`PANGOLIN_ENDPOINT`) and, once authenticated, lets Pangolin route external
 traffic in to services on this Docker host without opening inbound ports
-directly. This is the **primary path** for the `appname.external.valdeze.ch`
-naming convention used across this homelab — as opposed to the standalone
-Cloudflare Tunnel in `Cloudflared/`, which is a deliberate standby/fallback
-(see that stack's README and the top-level README's open questions).
+directly.
+
+**Updated Sept 2026 (Pangolin migration):** this used to be the primary
+exposure path for most of the homelab (`appname.external.valdeze.ch`).
+It no longer is. Almost every service is now internal-only via Traefik at
+`appname.valdeze.ch`, reached remotely through the UniFi VPN's split
+tunnel instead of through Pangolin. `newt` now only needs to route a
+minimal exception list: Authentik (`auth.valdeze.ch`), Mealie
+(`meals.valdeze.ch`), YTzero (`yt.valdeze.ch`), and the
+FluxerDiscordBridge panel (`fluxerbridge.valdeze.ch`) -- services that
+genuinely need to work without the VPN. The standalone Cloudflare Tunnel
+in `Cloudflared/` has been decommissioned entirely (it was never carrying
+live traffic).
 
 This folder also still contains a `nginx-proxy-manager/` subfolder and a
 fully commented-out NPM service block — a leftover from the retired Nginx

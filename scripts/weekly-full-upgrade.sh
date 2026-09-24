@@ -16,7 +16,7 @@ set -uo pipefail
 # shellcheck disable=SC1091
 [ -f /etc/default/weekly-full-upgrade ] && source /etc/default/weekly-full-upgrade
 
-NTFY_URL="${NTFY_URL:-https://ntfy.internal.valdeze.ch/homelab-updates}"
+NTFY_URL="${NTFY_URL:-https://ntfy.valdeze.ch/homelab-updates}"
 NTFY_TOKEN="${NTFY_TOKEN:?NTFY_TOKEN not set -- create /etc/default/weekly-full-upgrade}"
 
 LOG="$(mktemp)"

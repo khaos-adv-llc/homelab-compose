@@ -4,7 +4,7 @@ services:
         container_name: airtrail
         restart: unless-stopped
         environment:
-            ORIGIN: https://airtrail.external.valdeze.ch
+            ORIGIN: https://airtrail.valdeze.ch
             DB_URL: postgres://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE_NAME}
         depends_on:
             postgres:
@@ -14,6 +14,19 @@ services:
             shared-services:
                 aliases:
                     - airtrail
+        # Pangolin migration: AirTrail had no Traefik route before
+        # (Pangolin pointed straight at this container). Now internal-only
+        # via Traefik -- reachable on the LAN or remotely via the
+        # split-tunnel VPN. Delete AirTrail's Pangolin resource in its
+        # dashboard if one still exists.
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=shared-services"
+            - "traefik.http.routers.airtrail.rule=Host(`airtrail.valdeze.ch`)"
+            - "traefik.http.routers.airtrail.entrypoints=websecure"
+            - "traefik.http.routers.airtrail.tls=true"
+            - "traefik.http.routers.airtrail.tls.certresolver=cloudflare"
+            - "traefik.http.services.airtrail.loadbalancer.server.port=3000"
 
     postgres:
         image: postgres:16-alpine

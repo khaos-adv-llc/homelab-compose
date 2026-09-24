@@ -7,40 +7,24 @@ services:
 
         ports:
             - "3552:3552"
-#        labels:
-#            - "traefik.enable=true"
-#            - "traefik.http.routers.arcane.rule=Host(`arcane.internal.valdeze.ch`)"
-#            - "traefik.http.routers.arcane.entrypoints=websecure"
-#            - "traefik.http.routers.arcane.tls=true"
-#            - "traefik.http.routers.arcane.tls.certresolver=cloudflare"
-#            - "traefik.http.services.arcane.loadbalancer.server.port=3552"
+        # Pangolin migration: this used to run a dual internal/external
+        # hostname split (arcane.internal.valdeze.ch redirecting to the
+        # canonical arcane.external.valdeze.ch, which was reachable via
+        # Pangolin). Collapsed to a single internal-only hostname --
+        # reachable on the LAN directly, or remotely via the split-tunnel
+        # VPN. No Pangolin resource for Arcane anymore; if one still
+        # exists in Pangolin's dashboard, delete it there.
         labels:
             - "traefik.enable=true"
-
-            # Canonical, externally reachable Arcane endpoint.
-            - "traefik.http.routers.arcane.rule=Host(`arcane.external.valdeze.ch`)"
+            - "traefik.http.routers.arcane.rule=Host(`arcane.valdeze.ch`)"
             - "traefik.http.routers.arcane.entrypoints=websecure"
             - "traefik.http.routers.arcane.tls=true"
             - "traefik.http.routers.arcane.tls.certresolver=cloudflare"
             - "traefik.http.routers.arcane.service=arcane"
             - "traefik.http.services.arcane.loadbalancer.server.port=3552"
 
-            # Internal hostname: redirect, never serve Arcane directly.
-            - "traefik.http.routers.arcane-internal-redirect.rule=Host(`arcane.internal.valdeze.ch`)"
-            - "traefik.http.routers.arcane-internal-redirect.entrypoints=websecure"
-            - "traefik.http.routers.arcane-internal-redirect.tls=true"
-            - "traefik.http.routers.arcane-internal-redirect.tls.certresolver=cloudflare"
-            - "traefik.http.routers.arcane-internal-redirect.service=noop@internal"
-            - "traefik.http.routers.arcane-internal-redirect.middlewares=arcane-internal-to-external"
-
-            # Preserve the entire URL path, e.g. /settings/users.
-            # $$ is required in Docker Compose labels so Traefik receives ${1}.
-            - "traefik.http.middlewares.arcane-internal-to-external.redirectregex.regex=^https://arcane\\.internal\\.valdeze\\.ch/(.*)"
-            - "traefik.http.middlewares.arcane-internal-to-external.redirectregex.replacement=https://arcane.external.valdeze.ch/$${1}"
-            - "traefik.http.middlewares.arcane-internal-to-external.redirectregex.permanent=true"
-
         environment:
-            APP_URL: "https://arcane.external.valdeze.ch"
+            APP_URL: "https://arcane.valdeze.ch"
             TZ: Europe/Zurich
             PUID: "1000"
             PGID: "1000"

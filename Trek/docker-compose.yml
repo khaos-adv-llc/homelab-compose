@@ -29,8 +29,8 @@ services:
 
             ENCRYPTION_KEY: ${ENCRYPTION_KEY}
 
-            APP_URL: https://trek.external.valdeze.ch
-            ALLOWED_ORIGINS: https://trek.external.valdeze.ch
+            APP_URL: https://trek.valdeze.ch
+            ALLOWED_ORIGINS: https://trek.valdeze.ch
             FORCE_HTTPS: "true"
             TRUST_PROXY: "1"
 
@@ -43,6 +43,19 @@ services:
 
         networks:
             - shared-services
+
+        # Pangolin migration: Trek had no Traefik route before (Pangolin
+        # pointed straight at this container). Now internal-only via
+        # Traefik -- reachable on the LAN or remotely via the split-tunnel
+        # VPN. Delete Trek's Pangolin resource in its dashboard if one
+        # still exists.
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.trek.rule=Host(`trek.valdeze.ch`)"
+            - "traefik.http.routers.trek.entrypoints=websecure"
+            - "traefik.http.routers.trek.tls=true"
+            - "traefik.http.routers.trek.tls.certresolver=cloudflare"
+            - "traefik.http.services.trek.loadbalancer.server.port=3000"
 
         healthcheck:
             test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]

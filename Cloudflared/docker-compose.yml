@@ -1,8 +1,16 @@
-services:
-    cloudflare-tunnel:
-        container_name: cloudflared-tunnel
-        image: cloudflare/cloudflared
-        restart: unless-stopped
-        command: tunnel run
-        environment:
-            - TUNNEL_TOKEN=${cloudflare_token}
+# DECOMMISSIONED (Pangolin migration, confirmed with Tucker): this
+# standalone Cloudflare Tunnel was never actually carrying live traffic
+# and isn't wanted going forward -- Tucker doesn't want media streamed
+# over Cloudflare's free tier. Commented out rather than deleted in case
+# it's ever needed again. Tucker still needs to run
+# `docker compose down` (and remove the tunnel in the Cloudflare
+# dashboard, if desired) on the media server itself -- this repo change
+# alone doesn't stop the currently-running container.
+#services:
+#    cloudflare-tunnel:
+#        container_name: cloudflared-tunnel
+#        image: cloudflare/cloudflared
+#        restart: unless-stopped
+#        command: tunnel run
+#        environment:
+#            - TUNNEL_TOKEN=${cloudflare_token}
