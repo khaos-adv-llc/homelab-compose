@@ -12,6 +12,15 @@ services:
             NTFY_AUTH_FILE: "/var/lib/ntfy/auth.db"
             NTFY_AUTH_DEFAULT_ACCESS: "deny-all"
             NTFY_ENABLE_SIGNUP: "false"
+            # iOS can only receive real push notifications via Apple's APNs,
+            # which a self-hosted server can't talk to directly. This points
+            # ntfy at ntfy.sh purely as a wake-up relay: it forwards a
+            # content-free "go check your server" ping through APNs when a
+            # message is published, and the app then fetches the actual
+            # message from THIS server. Message content never reaches
+            # ntfy.sh. Not needed for Android (works natively) or the web
+            # app, but required for the iOS app to get background pushes.
+            NTFY_UPSTREAM_BASE_URL: "https://ntfy.sh"
         volumes:
             - ntfy-cache:/var/cache/ntfy
             - ntfy-data:/var/lib/ntfy
