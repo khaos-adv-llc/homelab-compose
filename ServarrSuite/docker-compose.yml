@@ -122,13 +122,17 @@ services:
             HEALTH_VPN_DURATION_INITIAL: ${HEALTH_VPN_DURATION_INITIAL}
         volumes:
             - ./gluetun:/gluetun
-        # Only the VPN torrenting port and qbittorrent's WebUI port live here.
-        # sabnzbd (8080) and nzbget (6789) were moved OFF gluetun onto MediaServer
-        # directly - see the Download Clients section - so they no longer need a
-        # host port punched through the VPN container.
-        ports:
-            - "${FIREWALL_VPN_INPUT_PORTS}:${FIREWALL_VPN_INPUT_PORTS}"
-            - "8082:8082"
+        # No host ports are published from this container any more (2026-11-24
+        # network hardening). qbittorrent is disabled, so nothing answers on
+        # its WebUI port (8082), and the torrenting port is forwarded by the
+        # VPN provider through the tunnel (FIREWALL_VPN_INPUT_PORTS above) -
+        # publishing it on the host did nothing without a port forward on the
+        # home gateway, and only exposed it to the LAN.
+        # If qbittorrent is re-enabled, route its WebUI through Traefik using
+        # the commented labels below instead of re-publishing 8082.
+#        ports:
+#            - "${FIREWALL_VPN_INPUT_PORTS}:${FIREWALL_VPN_INPUT_PORTS}"
+#            - "8082:8082"
         # qbittorrent has no network interface of its own (network_mode:
         # service:gluetun), so Traefik can only reach its WebUI through gluetun's
         # own container/network - hence its router/service labels live here
@@ -419,8 +423,9 @@ services:
             LOG_LEVEL: info
             HEADLESS: "true"
             BROWSER_TIMEOUT: "120000"
-        ports:
-            - "8191:8191"
+        # Not published on the host (2026-11-24 network hardening): the API is
+        # unauthenticated and will fetch any URL it is given. Prowlarr reaches
+        # it over the MediaServer network at http://flaresolverr:8191.
         networks:
             - MediaServer
         shm_size: 256m
@@ -592,8 +597,8 @@ services:
         image: ciuse99/suggestarr:latest
         container_name: SuggestArr
         restart: unless-stopped
-        ports:
-            - "${SUGGESTARR_PORT:-5000}:${SUGGESTARR_PORT:-5000}"
+        # Not published on the host (2026-11-24 network hardening): reached
+        # only through Traefik (suggestarr.${DOMAIN}), see labels below.
         volumes:
             - ./Suggestarr/config_files:/app/config/config_files
         environment:
