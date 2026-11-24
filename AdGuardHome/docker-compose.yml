@@ -52,7 +52,16 @@ services:
             - "traefik.http.services.adguardhome-doh.loadbalancer.server.scheme=https"
 
 networks:
-    default: {}
+    # IPv6 is enabled on this project-owned network so that DNS queries
+    # arriving over IPv6 on the published port 53 are DNAT'ed straight to the
+    # container (ip6tables) and AdGuard Home sees the real client address.
+    # Without it, Docker's userland proxy relays IPv6 clients over IPv4 and
+    # every query appears to come from the bridge gateway, which breaks
+    # per-client logs, the allowed-clients list and rate limiting.
+    # Requires Docker's ip6tables support (default on current Docker) and
+    # IPv6 forwarding on the host - see the host runbook before deploying.
+    default:
+        enable_ipv6: true
     shared-services:
         external: true
         name: shared-services

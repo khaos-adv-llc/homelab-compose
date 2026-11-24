@@ -52,9 +52,12 @@ http:
     dashboard-lan-allowlist:
       ipAllowList:
         sourceRange:
-          - "10.210.40.0/24"
-          - "10.210.50.0/24"
-          - "192.168.3.3/32"  # Tucker's laptop WireGuard peer IP
+          - "10.210.40.0/26"   # Trusted VLAN
+          - "10.200.200.0/24"  # UniFi WireGuard VPN clients
+          - "192.168.10.0/24"  # UniFi One-Click VPN clients
+          # Removed 2026-11-24: IoT (10.210.50.0/24), which has no business
+          # reaching the Traefik dashboard, and 192.168.3.3/32, a WireGuard
+          # peer address from an older setup that is no longer in use.
 
     authentik-forward-auth:
       forwardAuth:
