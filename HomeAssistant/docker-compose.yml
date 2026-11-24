@@ -49,10 +49,16 @@ services:
             - /run/dbus:/run/dbus:ro
             - /etc/localtime:/etc/localtime:ro
 
+        # The WebSocket API has no authentication, and with network_mode: host
+        # it would otherwise answer on every interface, including the IoT
+        # VLAN. Home Assistant runs on the same host and connects to
+        # ws://localhost:${MATTER_PORT}/ws, so loopback is all it needs.
         command: >
             --storage-path /data
             --paa-root-cert-dir /data/credentials
             --port ${MATTER_PORT}
+            --listen-address 127.0.0.1
+            --listen-address ::1
             --bluetooth-adapter ${MATTER_BT_ADAPTER}
             --log-level ${MATTER_LOG_LEVEL}
 
